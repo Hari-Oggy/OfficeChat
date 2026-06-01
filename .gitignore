@@ -1,7 +1,7 @@
 # Python-generated files
 __pycache__/
 *.py[oc]
-build/
+# build/
 dist/
 wheels/
 *.egg-info
@@ -9,4 +9,5 @@ wheels/
 # Virtual environments
 .venv
 graphify-out/
-
+agents/
+.env
