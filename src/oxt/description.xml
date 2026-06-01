@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<description xmlns="http://openoffice.org/extensions/description/2006"
+             xmlns:d="http://openoffice.org/extensions/description/2006"
+             xmlns:xlink="http://www.w3.org/1999/xlink">
+    <identifier value="org.neuro.ai.libreoffice.extension"/>
+    <version value="0.1.0"/>
+    <display-name>
+        <name lang="en">Neuro AI Extension</name>
+    </display-name>
+    <publisher>
+        <name xlink:href="https://github.com/yourusername/Neuro_ASTxCPG" lang="en">Neuro AI</name>
+    </publisher>
+</description>
