@@ -189,7 +189,7 @@ class ChatDialog:
         chat_model.Width = dm.Width - 12
         chat_model.Height = 256  # Increased height since we removed buttons
         chat_model.MultiLine = True
-        chat_model.ReadOnly = True
+        chat_model.ReadOnly = False  # Make editable per user request
         chat_model.VScroll = True
         chat_model.HardLineBreaks = True
         chat_model.Text = self._render_chat()
@@ -816,6 +816,26 @@ class ChatDialog:
                 selection.setString(text)
 
     def _get_last_response(self):
+        try:
+            ctrl = self.dialog.getControl("txtChat")
+            if not ctrl:
+                return None
+            
+            # 1. If user selected text in the chat box, apply only the selection
+            selected = ctrl.getSelectedText()
+            if selected and selected.strip():
+                return selected
+                
+            # 2. Otherwise, extract the last OfficeChat response from the full text
+            full_text = ctrl.getText()
+            marker = "  OfficeChat:\n"
+            idx = full_text.rfind(marker)
+            if idx != -1:
+                return full_text[idx + len(marker):].strip()
+        except Exception:
+            pass
+            
+        # Fallback to internal history if parsing fails
         for msg in reversed(self.chat_history):
             if msg["role"] == "assistant" and msg["content"] and msg["content"] != "...":
                 return msg["content"]
