@@ -451,6 +451,46 @@ class RichTextInserter:
         cursor.gotoEnd(False)
         self._text.insertString(cursor, text, False)
 
+    def _insert_tokens_at_cursor(self, cursor, tokens) -> None:
+        """Insert pre-parsed tokens at an arbitrary cursor position.
+
+        This is used by :class:`CursorEngine` to insert content at
+        positions other than the end of the document (e.g. at cursor,
+        above/below paragraph, etc.).
+
+        Parameters
+        ----------
+        cursor : com.sun.star.text.XTextCursor
+            A positioned text cursor where content will be inserted.
+        tokens : list of _Token
+            Pre-parsed block-level tokens from :func:`_tokenise`.
+        """
+        first_block = True
+        for token in tokens:
+            if token.kind == _TokenType.BLANK:
+                continue
+
+            if not first_block:
+                self._text.insertControlCharacter(cursor, 0, False)
+            first_block = False
+
+            if token.kind == _TokenType.HEADING:
+                self._insert_heading(cursor, token)
+            elif token.kind == _TokenType.PARAGRAPH:
+                self._insert_paragraph(cursor, token)
+            elif token.kind == _TokenType.BULLET:
+                self._insert_list_item(cursor, token, bullet=True)
+            elif token.kind == _TokenType.NUMBERED:
+                self._insert_list_item(cursor, token, bullet=False)
+            elif token.kind == _TokenType.BLOCKQUOTE:
+                self._insert_blockquote(cursor, token)
+            elif token.kind == _TokenType.CODE_BLOCK:
+                self._insert_code_block(cursor, token)
+            elif token.kind == _TokenType.TABLE:
+                self._insert_table(cursor, token)
+            elif token.kind == _TokenType.HRULE:
+                self._insert_hrule(cursor)
+
     # ------------------------------------------------------------------
     # Cursor helpers
     # ------------------------------------------------------------------

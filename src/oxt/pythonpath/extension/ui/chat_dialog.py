@@ -25,7 +25,7 @@ class ChatDialog:
 
     # Dialog dimensions
     NORMAL_WIDTH = 360
-    NORMAL_HEIGHT = 400
+    NORMAL_HEIGHT = 440
     MINIMIZED_HEIGHT = 20
 
     def __init__(self, ctx, doc):
@@ -43,15 +43,23 @@ class ChatDialog:
 
         # AI engine init
         from extension.utils.async_engine import AsyncEngine
-        from extension.ai.orchestrator import Orchestrator
         from extension.utils.config import ConfigManager
         from extension.core.document_context import DocumentContext
+        from extension.core.document_agent import DocumentAgent
+        from extension.core.rewrite_engine import RewriteEngine
+        from extension.core.translate_engine import TranslateEngine
+        from extension.core.table_engine import TableEngine
 
         self.engine = AsyncEngine()
         self.config_manager = ConfigManager()
         self.orchestrator = Orchestrator(self.config_manager)
         self.doc_context = DocumentContext(doc)
+        self.doc_agent = DocumentAgent(self.doc_context, self.orchestrator)
+        self.rewrite_engine = RewriteEngine(self.orchestrator)
+        self.translate_engine = TranslateEngine(self.orchestrator)
+        self.table_engine = TableEngine(self.orchestrator)
         self._include_doc_context = True  # Document context toggle
+        self._insert_mode = "end"  # Default insertion mode
 
     def show(self):
         """Create and display the chat dialog."""
@@ -108,6 +116,19 @@ class ChatDialog:
 
         y += 18
 
+        # Row 3a: Document Agent actions
+        doc_actions = [
+            ("btnDocSummary", "Doc Summary", 6, 70),
+            ("btnDocAction", "Action Items", 80, 70),
+            ("btnDocDeadlines", "Deadlines", 154, 60),
+            ("btnDocTOC", "Gen TOC", 218, 50),
+            ("btnDocConflicts", "Conflicts", 272, 60),
+        ]
+        for name, label, x, w in doc_actions:
+            self._add_button(dm, name, x, y, w, 14, label)
+
+        y += 18
+
         # Row 3b: Document context indicator + checkbox
         self._add_label(dm, "lblContext", 6, y, 280, 10,
                         "Context: \u2014")
@@ -122,7 +143,33 @@ class ChatDialog:
         cb_model.Label = "Doc Context"
         cb_model.State = 1  # Checked by default
         dm.insertByName("chkDocContext", cb_model)
-        y += 14
+        y += 18
+
+        # Row 3c: Engines Options
+        self._add_label(dm, "lblTone", 6, y, 30, 10, "Tone:")
+        cmb_tone = dm.createInstance("com.sun.star.awt.UnoControlComboBoxModel")
+        cmb_tone.Name = "cmbTone"
+        cmb_tone.PositionX = 40
+        cmb_tone.PositionY = y
+        cmb_tone.Width = 100
+        cmb_tone.Height = 12
+        cmb_tone.Dropdown = True
+        cmb_tone.StringItemList = ("Professional", "Casual", "Executive", "Academic", "Marketing", "Technical")
+        cmb_tone.Text = "Professional"
+        dm.insertByName("cmbTone", cmb_tone)
+
+        self._add_label(dm, "lblLang", 150, y, 50, 10, "Language:")
+        cmb_lang = dm.createInstance("com.sun.star.awt.UnoControlComboBoxModel")
+        cmb_lang.Name = "cmbLang"
+        cmb_lang.PositionX = 200
+        cmb_lang.PositionY = y
+        cmb_lang.Width = 100
+        cmb_lang.Height = 12
+        cmb_lang.Dropdown = True
+        cmb_lang.StringItemList = ("Spanish", "French", "German", "Chinese", "Japanese", "English")
+        cmb_lang.Text = "Spanish"
+        dm.insertByName("cmbLang", cmb_lang)
+        y += 18
 
         # ── Chat history area ──
         chat_model = dm.createInstance("com.sun.star.awt.UnoControlEditModel")
@@ -158,15 +205,27 @@ class ChatDialog:
 
         y += 34
 
-        # ── Status bar ──
-        self._add_label(dm, "lblStatus", 6, y, 220, 10, "Ready. Type a message or use a quick action.")
+        # ── Insertion mode selector + status bar ──
+        self._add_label(dm, "lblInsertMode", 6, y, 30, 10, "Insert:")
+
+        # Insertion mode dropdown
+        lb_model = dm.createInstance("com.sun.star.awt.UnoControlListBoxModel")
+        lb_model.Name = "lstInsertMode"
+        lb_model.PositionX = 36
+        lb_model.PositionY = y
+        lb_model.Width = 62
+        lb_model.Height = 12
+        lb_model.Dropdown = True
+        dm.insertByName("lstInsertMode", lb_model)
+
+        # Status label (to the right of the dropdown)
+        self._add_label(dm, "lblStatus", 104, y, 156, 10, "Ready.")
 
         # Update context indicator with initial doc info
         self._update_context_indicator()
 
         # ── Clear button ──
         self._add_button(dm, "btnClear", dm.Width - 80, y, 36, 12, "Clear")
-        self._add_button(dm, "btnApplyReplace", dm.Width - 40, y, 36, 12, "Replace")
 
         # ── Build the control ──
         dc = smgr.createInstanceWithContext("com.sun.star.awt.UnoControlDialog", self.ctx)
@@ -174,12 +233,23 @@ class ChatDialog:
 
         # ── Wire listeners ──
         self._wire(dc, "btnSend", SendListener(self))
-        self._wire(dc, "btnApply", ApplyListener(self, replace=False))
-        self._wire(dc, "btnApplyReplace", ApplyListener(self, replace=True))
+        self._wire(dc, "btnApply", ApplyListener(self))
         self._wire(dc, "btnClear", ClearListener(self))
         self._wire(dc, "btnClose", CloseListener(self))
         self._wire(dc, "btnMinimize", MinimizeListener(self))
         self._wire(dc, "btnMaximize", MaximizeListener(self))
+
+        # Populate insertion mode dropdown
+        try:
+            from extension.core.cursor_engine import CursorEngine
+            lst_ctrl = dc.getControl("lstInsertMode")
+            for mode_id, mode_label in CursorEngine.ALL_MODES:
+                lst_ctrl.addItem(mode_label, lst_ctrl.getItemCount())
+            lst_ctrl.selectItemPos(4, True)  # Default: "End of Doc" (index 4)
+            self._insert_mode = CursorEngine.MODE_END
+            lst_ctrl.addItemListener(InsertModeListener(self))
+        except Exception:
+            pass
 
         # Doc context checkbox listener
         try:
@@ -201,6 +271,11 @@ class ChatDialog:
             "btnTable": "table",
             "btnTranslate": "translate",
             "btnContinue": "continue",
+            "btnDocSummary": "doc_summary",
+            "btnDocAction": "doc_action_items",
+            "btnDocDeadlines": "doc_deadlines",
+            "btnDocTOC": "doc_toc",
+            "btnDocConflicts": "doc_conflicts",
         }
         for btn_name, action_name in action_map.items():
             self._wire(dc, btn_name, QuickActionListener(self, action_name))
@@ -311,7 +386,8 @@ class ChatDialog:
         buttons = [
             "btnSend", "btnRewrite", "btnImprove", "btnSummarize",
             "btnExpand", "btnShorten", "btnGrammar", "btnFormal",
-            "btnCasual", "btnBullets", "btnTable", "btnTranslate", "btnContinue"
+            "btnCasual", "btnBullets", "btnTable", "btnTranslate", "btnContinue",
+            "btnDocSummary", "btnDocAction", "btnDocDeadlines", "btnDocTOC", "btnDocConflicts"
         ]
         for name in buttons:
             try:
@@ -378,15 +454,103 @@ class ChatDialog:
 
         txt_input = self.dialog.getControl("txtInput")
         user_text = txt_input.getModel().Text.strip()
-        selected_text = self._get_selected_text()
+        selected_text = self.doc_context.get_selected_text()
 
-        # For quick actions, the selected text IS the content; user text is optional instruction
+        # Handle Document Agent actions separately
+        doc_agent_actions = {
+            "doc_summary": (self.doc_agent.summarize_document, "Summarizing document..."),
+            "doc_action_items": (self.doc_agent.extract_action_items, "Extracting action items..."),
+            "doc_deadlines": (self.doc_agent.extract_deadlines, "Extracting deadlines..."),
+            "doc_toc": (self.doc_agent.generate_toc, "Generating Table of Contents..."),
+            "doc_conflicts": (self.doc_agent.find_inconsistencies, "Analyzing document for conflicts..."),
+        }
+
+        if action in doc_agent_actions:
+            self._current_action = action
+            display_text = f"[{action.upper()}]"
+            self.chat_history.append({"role": "user", "content": display_text, "action": action})
+            self.chat_history.append({"role": "assistant", "content": "..."})
+            txt_input.getModel().Text = ""
+            self._update_chat_display()
+            self._set_status(doc_agent_actions[action][1])
+            self._set_buttons_enabled(False)
+            
+            self._streaming_buffer = ""
+            self._is_streaming = True
+            
+            # Execute the DocumentAgent method (it handles its own system prompt and execution)
+            doc_agent_actions[action][0](self.engine.output_queue)
+            
+            self._poll_thread = threading.Thread(target=self._poll_responses, daemon=True)
+            self._poll_thread.start()
+            return
+
+        # For regular quick actions, the selected text IS the content; user text is optional instruction
         if action:
             if not selected_text and not user_text:
                 self._set_status("Select text in your document first, or type in the input box.")
                 return
             content = selected_text if selected_text else user_text
             display_text = content[:100] + ("..." if len(content) > 100 else "")
+            
+            # Use Advanced Content Engines for specific actions
+            if action == "rewrite":
+                tone = self.dialog.getControl("cmbTone").getText()
+                prompt = f"Rewrite 3 variants of the selected text in a {tone} tone."
+                self._current_action = action
+                self.chat_history.append({"role": "user", "content": prompt, "action": action})
+                self.chat_history.append({"role": "assistant", "content": "..."})
+                txt_input.getModel().Text = ""
+                self._update_chat_display()
+                self._set_status(f"Generating 3 variants in {tone} tone...")
+                self._set_buttons_enabled(False)
+                
+                self._streaming_buffer = ""
+                self._is_streaming = True
+                
+                self.rewrite_engine.generate_variants(content, tone, count=3, output_queue=self.engine.output_queue)
+                self._poll_thread = threading.Thread(target=self._poll_responses, daemon=True)
+                self._poll_thread.start()
+                return
+                
+            elif action == "translate":
+                lang = self.dialog.getControl("cmbLang").getText()
+                prompt = f"Translate the selected text into {lang}."
+                self._current_action = action
+                self.chat_history.append({"role": "user", "content": prompt, "action": action})
+                self.chat_history.append({"role": "assistant", "content": "..."})
+                txt_input.getModel().Text = ""
+                self._update_chat_display()
+                self._set_status(f"Translating to {lang}...")
+                self._set_buttons_enabled(False)
+                
+                self._streaming_buffer = ""
+                self._is_streaming = True
+                
+                self.translate_engine.translate_selection(content, lang, output_queue=self.engine.output_queue)
+                self._poll_thread = threading.Thread(target=self._poll_responses, daemon=True)
+                self._poll_thread.start()
+                return
+                
+            elif action == "table":
+                prompt = "Convert the selected text into a Markdown table."
+                self._current_action = action
+                self.chat_history.append({"role": "user", "content": prompt, "action": action})
+                self.chat_history.append({"role": "assistant", "content": "..."})
+                txt_input.getModel().Text = ""
+                self._update_chat_display()
+                self._set_status("Extracting structured table data...")
+                self._set_buttons_enabled(False)
+                
+                self._streaming_buffer = ""
+                self._is_streaming = True
+                
+                self.table_engine.text_to_table(content, output_queue=self.engine.output_queue)
+                self._poll_thread = threading.Thread(target=self._poll_responses, daemon=True)
+                self._poll_thread.start()
+                return
+            
+            # Other actions use standard prompt building
             prompt = content
             if user_text and selected_text:
                 # User typed additional instructions
@@ -396,6 +560,27 @@ class ChatDialog:
                 return
             display_text = user_text
             prompt = user_text
+            
+            # Auto-route to DocumentAgent if no selection and it asks a question about the doc
+            if not selected_text and "?" in user_text:
+                # Basic heuristic: if they ask a question and have nothing selected, use DocumentAgent Q&A
+                self._current_action = "doc_qa"
+                self.chat_history.append({"role": "user", "content": display_text, "action": "doc_qa"})
+                self.chat_history.append({"role": "assistant", "content": "..."})
+                txt_input.getModel().Text = ""
+                self._update_chat_display()
+                self._set_status("Analyzing document to answer question...")
+                self._set_buttons_enabled(False)
+                
+                self._streaming_buffer = ""
+                self._is_streaming = True
+                
+                self.doc_agent.answer_question(user_text, self.engine.output_queue)
+                
+                self._poll_thread = threading.Thread(target=self._poll_responses, daemon=True)
+                self._poll_thread.start()
+                return
+
             if selected_text:
                 # Use selected text as primary context
                 prompt = f"Document context (selected text):\n\"\"\"\n{selected_text}\n\"\"\"\n\nUser instruction: {user_text}"
@@ -504,23 +689,29 @@ class ChatDialog:
 
     # ── Apply to document ──
 
-    def apply_to_document(self, replace=False):
-        """Insert or replace content in the document using rich formatting."""
+    def apply_to_document(self):
+        """Insert AI response into the document using the selected insertion mode."""
         last_response = self._get_last_response()
         if not last_response:
             self._set_status("No AI response to apply.")
             return
 
         try:
-            from extension.core.rich_text import RichTextInserter
-            inserter = RichTextInserter(self.doc)
-            inserter.insert_markdown(last_response, replace_selection=replace)
-            mode = "Replaced selection" if replace else "Inserted at end"
-            self._set_status(f"Applied to document. ({mode})")
+            from extension.core.cursor_engine import CursorEngine
+            engine = CursorEngine(self.doc)
+            engine.insert(last_response, mode=self._insert_mode)
+
+            # Find the display label for the current mode
+            mode_label = self._insert_mode
+            for mid, mlabel in CursorEngine.ALL_MODES:
+                if mid == self._insert_mode:
+                    mode_label = mlabel
+                    break
+            self._set_status(f"Applied to document. ({mode_label})")
         except Exception as e:
-            # Fallback to plain text
+            # Fallback to plain text at end
             try:
-                self._apply_plain_text(last_response, replace)
+                self._apply_plain_text(last_response, replace=False)
                 self._set_status(f"Applied (plain text fallback). {str(e)[:50]}")
             except Exception as e2:
                 self._set_status(f"Failed: {str(e2)[:80]}")
@@ -634,11 +825,25 @@ class QuickActionListener(unohelper.Base, XActionListener):
         pass
 
 class ApplyListener(unohelper.Base, XActionListener):
-    def __init__(self, dlg, replace=False):
+    def __init__(self, dlg):
         self.dlg = dlg
-        self.replace = replace
     def actionPerformed(self, ev):
-        self.dlg.apply_to_document(replace=self.replace)
+        self.dlg.apply_to_document()
+    def disposing(self, s):
+        pass
+
+class InsertModeListener(unohelper.Base, XItemListener):
+    """Listener for the insertion mode dropdown."""
+    def __init__(self, dlg):
+        self.dlg = dlg
+    def itemStateChanged(self, ev):
+        try:
+            from extension.core.cursor_engine import CursorEngine
+            pos = ev.Selected
+            if 0 <= pos < len(CursorEngine.ALL_MODES):
+                self.dlg._insert_mode = CursorEngine.ALL_MODES[pos][0]
+        except Exception:
+            pass
     def disposing(self, s):
         pass
 
