@@ -4,6 +4,7 @@ from typing import AsyncGenerator, List, Dict
 import json
 import urllib.request
 import asyncio
+from extension.utils.logger import log_error
 
 class GoogleProvider(IAIProvider):
     def __init__(self, api_key: str, model: str):
@@ -85,6 +86,7 @@ class GoogleProvider(IAIProvider):
                             err_msg += " - " + e.read().decode('utf-8')
                         except Exception:
                             pass
+                    log_error(f"Google API network error: {err_msg}", exc_info=True)
                     q.put(f"ERROR: {err_msg}")
                 finally:
                     q.put(None)
@@ -101,8 +103,7 @@ class GoogleProvider(IAIProvider):
                     break
 
                 if line.startswith("ERROR:"):
-                    yield f"\n[Error]: {line[6:]}"
-                    break
+                    raise Exception(line[6:])
 
                 line = line.strip()
                 if line.startswith("data: "):
@@ -119,4 +120,5 @@ class GoogleProvider(IAIProvider):
                         pass
 
         except Exception as e:
-            yield f"\n[Error]: {str(e)}"
+            log_error(f"Google provider stream exception: {e}", exc_info=True)
+            raise e

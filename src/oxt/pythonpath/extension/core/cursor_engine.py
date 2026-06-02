@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 from typing import Optional
+from extension.utils.logger import log_warning
 
 try:
     import uno  # noqa: F401
@@ -148,8 +149,9 @@ class CursorEngine:
             else:
                 inserter.insert_plain(markdown_text)
 
-        except Exception:
+        except Exception as e:
             # Fallback
+            log_warning(f"insert_above_cursor failed, falling back to end: {e}")
             self.append_to_end(markdown_text)
 
     def insert_below_cursor(self, markdown_text: str) -> None:
@@ -177,8 +179,9 @@ class CursorEngine:
             else:
                 inserter.insert_plain(markdown_text)
 
-        except Exception:
+        except Exception as e:
             # Fallback
+            log_warning(f"insert_below_cursor failed, falling back to end: {e}")
             self.append_to_end(markdown_text)
 
     def replace_selection(self, markdown_text: str) -> None:
@@ -244,5 +247,6 @@ class CursorEngine:
             view_cursor = controller.getViewCursor()
             text_cursor = self._text.createTextCursorByRange(view_cursor.getStart())
             return text_cursor
-        except Exception:
+        except Exception as e:
+            log_warning(f"Failed to convert view cursor to text cursor: {e}")
             return None

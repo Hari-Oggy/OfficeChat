@@ -3,6 +3,7 @@ from typing import AsyncGenerator, List, Dict
 import json
 import urllib.request
 import asyncio
+from extension.utils.logger import log_error
 
 # System prompt that ensures the AI outputs clean, formatted content
 SYSTEM_PROMPT = """You are a professional document assistant integrated into LibreOffice.
@@ -86,6 +87,7 @@ class OpenAIProvider(IAIProvider):
                         for line in response:
                             q.put(line.decode("utf-8"))
                 except Exception as e:
+                    log_error(f"OpenAI API network error: {e}", exc_info=True)
                     q.put(f"ERROR: {str(e)}")
                 finally:
                     q.put(None)
@@ -102,8 +104,7 @@ class OpenAIProvider(IAIProvider):
                     break
 
                 if line.startswith("ERROR:"):
-                    yield f"\n[Error]: {line[6:]}"
-                    break
+                    raise Exception(line[6:])
 
                 line = line.strip()
                 if line.startswith("data: ") and line != "data: [DONE]":
@@ -118,4 +119,5 @@ class OpenAIProvider(IAIProvider):
                         pass
 
         except Exception as e:
-            yield f"\n[Error]: {str(e)}"
+            log_error(f"OpenAI provider stream exception: {e}", exc_info=True)
+            raise e

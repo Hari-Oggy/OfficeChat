@@ -37,8 +37,8 @@ def _reset_char_format(cursor) -> None:
         cursor.setPropertyValue("CharPosture", FONT_SLANT_NONE)
         cursor.setPropertyValue("CharUnderline", UNDERLINE_NONE)
         cursor.setPropertyValue("CharHighlight", -1) # Reset highlight
-    except Exception:
-        pass
+    except Exception as e:
+        log_warning(f"RichText formatting error: {e}")
 
 class RichTextInserter:
     def __init__(self, doc):
@@ -51,8 +51,8 @@ class RichTextInserter:
                 para_styles = families.getByName("ParagraphStyles")
                 names = para_styles.getElementNames()
                 self._available_styles = set(names)
-        except Exception:
-            pass
+        except Exception as e:
+            log_warning(f"RichText formatting error: {e}")
 
         if MarkdownIt:
             self.md = MarkdownIt("commonmark", {"linkify": False})
@@ -164,8 +164,8 @@ class RichTextInserter:
                     self._apply_para_style(cursor, style)
                     try:
                         cursor.setPropertyValue("NumberingLevel", len(list_stack) - 1)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log_warning(f"RichText formatting error: {e}")
                 else:
                     self._apply_para_style(cursor, STYLE_DEFAULT)
                     
@@ -182,12 +182,14 @@ class RichTextInserter:
                 selection = controller.getSelection()
                 if selection is not None:
                     try: sel_range = selection.getByIndex(0)
-                    except Exception: sel_range = selection
+                    except Exception as e:
+                        log_warning(f"Failed to get index 0 from selection: {e}")
+                        sel_range = selection
                     cursor = self._text.createTextCursorByRange(sel_range)
                     cursor.setString("")
                     return cursor
-            except Exception:
-                pass
+            except Exception as e:
+                log_warning(f"RichText formatting error: {e}")
 
         cursor = self._text.createTextCursor()
         cursor.gotoEnd(False)
@@ -198,7 +200,8 @@ class RichTextInserter:
         try:
             cursor.setPropertyValue("CharFontName", MONOSPACE_FONT)
             cursor.setPropertyValue("CharHeight", MONOSPACE_FONT_SIZE)
-        except Exception: pass
+        except Exception as e:
+            log_warning(f"RichText formatting error: {e}")
 
         code_lines = text.split('\n')
         for idx, code_line in enumerate(code_lines):
@@ -208,7 +211,8 @@ class RichTextInserter:
                 try:
                     cursor.setPropertyValue("CharFontName", MONOSPACE_FONT)
                     cursor.setPropertyValue("CharHeight", MONOSPACE_FONT_SIZE)
-                except Exception: pass
+                except Exception as e:
+                    log_warning(f"RichText formatting error: {e}")
             self._text.insertString(cursor, code_line, False)
         _reset_char_format(cursor)
 
@@ -256,11 +260,13 @@ class RichTextInserter:
                             cell_cursor.gotoStart(False)
                             cell_cursor.gotoEnd(True)
                             try: cell_cursor.setPropertyValue("CharWeight", FONT_WEIGHT_BOLD)
-                            except Exception: pass
-                    except Exception:
+                            except Exception as e:
+                                log_warning(f"RichText formatting error: {e}")
+                    except Exception as e:
+                        log_warning(f"Failed to process table cell {cell_name}: {e}")
                         continue
-        except Exception:
-            pass
+        except Exception as e:
+            log_warning(f"RichText formatting error: {e}")
 
     def _insert_inline_tokens(self, cursor, inline_token, text_obj=None) -> None:
         if text_obj is None:
@@ -286,10 +292,13 @@ class RichTextInserter:
                     fmt_cursor.setPropertyValue("CharFontName", MONOSPACE_FONT)
                     fmt_cursor.setPropertyValue("CharHeight", MONOSPACE_FONT_SIZE)
                     try: fmt_cursor.setPropertyValue("CharHighlight", 0xE0E0E0)
-                    except Exception:
+                    except Exception as e:
+                        log_warning(f"CharHighlight failed: {e}")
                         try: fmt_cursor.setPropertyValue("CharBackColor", 0xE0E0E0)
-                        except Exception: pass
-                except Exception: pass
+                        except Exception as e:
+                            log_warning(f"RichText formatting error: {e}")
+                except Exception as e:
+                    log_warning(f"RichText formatting error: {e}")
             elif child.type == 'text':
                 start_pos = cursor.getEnd()
                 text_obj.insertString(cursor, child.content, False)
@@ -300,7 +309,8 @@ class RichTextInserter:
                         fmt_cursor.setPropertyValue("CharWeight", FONT_WEIGHT_BOLD)
                     if 'em' in active_formats:
                         fmt_cursor.setPropertyValue("CharPosture", FONT_SLANT_ITALIC)
-                except Exception: pass
+                except Exception as e:
+                    log_warning(f"RichText formatting error: {e}")
             elif child.type == 'softbreak' or child.type == 'hardbreak':
                 text_obj.insertControlCharacter(cursor, 0, False) # newline
 
@@ -309,7 +319,8 @@ class RichTextInserter:
             try:
                 cursor.setPropertyValue("ParaStyleName", style_name)
                 return
-            except Exception: pass
+            except Exception as e:
+                log_warning(f"RichText formatting error: {e}")
 
         try:
             if style_name in (STYLE_HEADING_1, STYLE_HEADING_2, STYLE_HEADING_3):
@@ -326,7 +337,8 @@ class RichTextInserter:
             elif style_name == STYLE_PREFORMATTED:
                 cursor.setPropertyValue("CharFontName", MONOSPACE_FONT)
                 cursor.setPropertyValue("CharHeight", MONOSPACE_FONT_SIZE)
-        except Exception: pass
+        except Exception as e:
+            log_warning(f"RichText formatting error: {e}")
 
     @staticmethod
     def _table_cell_name(row: int, col: int) -> str:

@@ -731,6 +731,12 @@ class ChatDialog:
                     self._update_chat_display()
                     self._set_status(f"Error: {error_msg[:100]}")
                     self._set_buttons_enabled(True)
+                    try:
+                        from extension.utils.ui_utils import show_message_box
+                        show_message_box(self.ctx, self.dialog.getPeer(), error_msg, "AI Generation Error", "error")
+                    except Exception as e:
+                        from extension.utils.logger import log_error
+                        log_error(f"Failed to show message box: {e}")
                     break
             else:
                 time.sleep(0.05)

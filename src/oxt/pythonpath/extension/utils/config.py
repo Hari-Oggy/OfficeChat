@@ -3,6 +3,8 @@ import os
 from pathlib import Path
 from typing import Dict, Any
 
+from extension.utils.logger import log_error, log_warning, log_info
+
 class ConfigManager:
     """Manages AI extension configuration and secure API keys."""
     
@@ -20,8 +22,8 @@ class ConfigManager:
             # Try to restrict directory permissions
             try:
                 config_dir.chmod(0o700)
-            except Exception:
-                pass
+            except Exception as e:
+                log_warning(f"Could not restrict permissions on config directory: {e}")
                 
         if not self.config_path.exists():
             default_config = {
@@ -55,22 +57,24 @@ class ConfigManager:
             # Try to restrict file permissions
             try:
                 self.config_path.chmod(0o600)
-            except Exception:
-                pass
+                log_info("Created default config.json")
+            except Exception as e:
+                log_warning(f"Could not restrict permissions on config.json: {e}")
 
     def _load_config(self) -> Dict[str, Any]:
         try:
             with open(self.config_path, "r") as f:
                 return json.load(f)
-        except Exception:
+        except Exception as e:
+            log_error(f"Failed to load config.json: {e}", exc_info=True)
             return {}
 
     def _save_config(self):
         try:
             with open(self.config_path, "w") as f:
                 json.dump(self.config, f, indent=4)
-        except Exception:
-            pass
+        except Exception as e:
+            log_error(f"Failed to save config.json: {e}", exc_info=True)
 
     def get_provider_config(self, provider_name: str) -> Dict[str, str]:
         """Returns the config for a specific provider."""

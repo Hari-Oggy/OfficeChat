@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import re
 from typing import List, Dict, Optional, Any
+from extension.utils.logger import log_error, log_warning
 
 try:
     import uno  # noqa: F401 — available inside LibreOffice
@@ -108,7 +109,8 @@ class DocumentContext:
             self._cached_full_text = "\n".join(lines)
             return self._cached_full_text
 
-        except Exception:
+        except Exception as e:
+            log_warning(f"DocumentContext string extraction error: {e}")
             return ""
 
     # ------------------------------------------------------------------
@@ -134,14 +136,14 @@ class DocumentContext:
                             text = selection.getByIndex(0).getString()
                             if text and text.strip():
                                 return text
-                    except Exception:
-                        # Fallback: try getString directly
+                    except Exception as e:
+                        log_warning(f"Failed to get selection string: {e}")
                         try:
                             text = selection.getString()
                             if text and text.strip():
                                 return text
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            log_warning(f"DocumentContext non-fatal error: {e}")
 
             elif self._doc.supportsService("com.sun.star.sheet.SpreadsheetDocument"):
                 controller = self._doc.getCurrentController()
@@ -151,8 +153,8 @@ class DocumentContext:
                     if text and text.strip():
                         return text
 
-        except Exception:
-            pass
+        except Exception as e:
+            log_warning(f"DocumentContext non-fatal error: {e}")
         return ""
 
     # ------------------------------------------------------------------
@@ -172,7 +174,8 @@ class DocumentContext:
             text_cursor.gotoStartOfParagraph(False)
             text_cursor.gotoEndOfParagraph(True)
             return text_cursor.getString()
-        except Exception:
+        except Exception as e:
+            log_warning(f"DocumentContext string extraction error: {e}")
             return ""
 
     def get_cursor_section(self) -> str:
@@ -197,15 +200,16 @@ class DocumentContext:
                         text_cursor.gotoStartOfParagraph(False)
                         text_cursor.gotoEndOfParagraph(True)
                         return text_cursor.getString()
-                except Exception:
-                    pass
+                except Exception as e:
+                    log_warning(f"DocumentContext non-fatal error: {e}")
 
                 # Move to previous paragraph
                 if not text_cursor.gotoPreviousParagraph(False):
                     break
 
             return ""  # No heading found above cursor
-        except Exception:
+        except Exception as e:
+            log_warning(f"DocumentContext string extraction error: {e}")
             return ""
 
     def get_cursor_position_info(self) -> Dict[str, Any]:
@@ -240,8 +244,8 @@ class DocumentContext:
             # Page number
             try:
                 info["page_number"] = view_cursor.getPage()
-            except Exception:
-                pass
+            except Exception as e:
+                log_warning(f"DocumentContext non-fatal error: {e}")
 
             # Paragraph index (enumerate until we find the cursor's paragraph)
             try:
@@ -262,11 +266,11 @@ class DocumentContext:
                                 end_cmp = text_obj.compareRegionEnds(cursor_start, tc.getEnd())
                                 if end_cmp <= 0:
                                     info["paragraph_index"] = idx
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            log_warning(f"DocumentContext non-fatal error: {e}")
                         idx += 1
-            except Exception:
-                pass
+            except Exception as e:
+                log_warning(f"DocumentContext non-fatal error: {e}")
 
             info["current_paragraph"] = self.get_cursor_paragraph()
             info["current_section"] = self.get_cursor_section()
@@ -276,8 +280,8 @@ class DocumentContext:
             info["has_selection"] = bool(selected)
             info["selected_text"] = selected
 
-        except Exception:
-            pass
+        except Exception as e:
+            log_warning(f"DocumentContext non-fatal error: {e}")
 
         return info
 
@@ -320,8 +324,8 @@ class DocumentContext:
                     table_name = ""
                     try:
                         table_name = element.getName()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log_warning(f"DocumentContext non-fatal error: {e}")
 
                     # Extract header row for summary
                     header_text = self._get_table_header_text(element)
@@ -341,8 +345,8 @@ class DocumentContext:
                     style_name = ""
                     try:
                         style_name = element.getPropertyValue("ParaStyleName")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log_warning(f"DocumentContext non-fatal error: {e}")
 
                     # Determine type
                     heading_match = _HEADING_STYLE_RE.match(style_name)
@@ -365,8 +369,8 @@ class DocumentContext:
                     })
                     idx += 1
 
-        except Exception:
-            pass
+        except Exception as e:
+            log_warning(f"DocumentContext non-fatal error: {e}")
 
         self._cached_map = doc_map
         return doc_map
@@ -420,16 +424,16 @@ class DocumentContext:
                 name = ""
                 try:
                     name = table.getName()
-                except Exception:
-                    pass
+                except Exception as e:
+                    log_warning(f"DocumentContext non-fatal error: {e}")
 
                 rows = 0
                 cols = 0
                 try:
                     rows = table.getRows().getCount()
                     cols = table.getColumns().getCount()
-                except Exception:
-                    pass
+                except Exception as e:
+                    log_warning(f"DocumentContext non-fatal error: {e}")
 
                 header_text = self._get_table_header_text(table)
 
@@ -440,8 +444,8 @@ class DocumentContext:
                     "header_text": header_text,
                     "index": i,
                 })
-        except Exception:
-            pass
+        except Exception as e:
+            log_warning(f"DocumentContext non-fatal error: {e}")
 
         return summaries
 
@@ -487,8 +491,8 @@ class DocumentContext:
             meta["subject"] = props.Subject or ""
             meta["author"] = props.Author or ""
             meta["description"] = props.Description or ""
-        except Exception:
-            pass
+        except Exception as e:
+            log_warning(f"DocumentContext non-fatal error: {e}")
 
         # Word count from document statistics
         try:
@@ -501,16 +505,17 @@ class DocumentContext:
                     meta["page_count"] = stat.Value
                 elif stat.Name == "ParagraphCount":
                     meta["paragraph_count"] = stat.Value
-        except Exception:
+        except Exception as e:
             # Fallback: estimate from full text
+            log_warning(f"Failed to get doc statistics, falling back: {e}")
             full_text = self.get_full_text()
             meta["word_count"] = len(full_text.split())
 
         # Table count
         try:
             meta["table_count"] = self._doc.getTextTables().getCount()
-        except Exception:
-            pass
+        except Exception as e:
+            log_warning(f"DocumentContext non-fatal error: {e}")
 
         # Heading count
         meta["heading_count"] = len(self.get_headings())
@@ -776,11 +781,12 @@ class DocumentContext:
                     try:
                         cell = table.getCellByName(cell_name)
                         cells.append(cell.getString())
-                    except Exception:
+                    except Exception as e:
+                        log_warning(f"Failed to get table cell {cell_name}: {e}")
                         cells.append("")
                 rows_text.append("\t".join(cells))
-        except Exception:
-            pass
+        except Exception as e:
+            log_warning(f"DocumentContext non-fatal error: {e}")
         return "\n".join(rows_text)
 
     @staticmethod
@@ -794,10 +800,12 @@ class DocumentContext:
                 try:
                     cell = table.getCellByName(cell_name)
                     cells.append(cell.getString())
-                except Exception:
+                except Exception as e:
+                    log_warning(f"Failed to get header cell {cell_name}: {e}")
                     cells.append("")
             return " | ".join(cells)
-        except Exception:
+        except Exception as e:
+            log_warning(f"DocumentContext string extraction error: {e}")
             return ""
 
 
