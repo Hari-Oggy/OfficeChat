@@ -239,6 +239,9 @@ class ChatDialog:
         # ── Build the control ──
         dc = smgr.createInstanceWithContext("com.sun.star.awt.UnoControlDialog", self.ctx)
         dc.setModel(dm)
+        self.dialog = dc
+        
+        self._do_layout(self.NORMAL_WIDTH, self.NORMAL_HEIGHT)
 
         
         # Suggestion listeners
@@ -282,14 +285,34 @@ class ChatDialog:
         # Detach from parent frame so the window can be moved independently
         dc.createPeer(toolkit, None)
         self.dialog = dc
+        
+        # Calculate pixel-to-AppFont ratio for responsive layout
+        try:
+            pixel_size = dc.getPosSize()
+            if pixel_size.Width > 0 and pixel_size.Height > 0:
+                self._ratio_x = self.NORMAL_WIDTH / pixel_size.Width
+                self._ratio_y = self.NORMAL_HEIGHT / pixel_size.Height
+            else:
+                self._ratio_x = 1.0
+                self._ratio_y = 1.0
+        except Exception:
+            self._ratio_x = 1.0
+            self._ratio_y = 1.0
 
         # Listen for native window closing events
         try:
             from com.sun.star.awt import XTopWindowListener
+            from com.sun.star.awt import XWindowListener
+            
             self._window_listener = WindowListener(self)
             dc.getPeer().addTopWindowListener(self._window_listener)
+            
+            # Also add resize listener
+            dc.addWindowListener(self._window_listener)
         except Exception:
             pass
+            
+        self._do_layout(self.NORMAL_WIDTH, self.NORMAL_HEIGHT)
 
         dc.getControl("txtInput").setFocus()
         dc.setVisible(True)
@@ -322,6 +345,57 @@ class ChatDialog:
             dc.getControl(name).addActionListener(listener)
         except Exception:
             pass
+
+    def _do_layout(self, width, height):
+        """Dynamically positions controls based on dialog size in AppFont units."""
+        if not self.dialog:
+            return
+            
+        try:
+            # 2. Bottom Section (anchored bottom)
+            input_y = height - 42
+            self._set_pos_size("txtInput", 6, input_y, width - 62, 36)
+            self._set_pos_size("btnSend", width - 52, input_y, 46, 36)
+            
+            # Suggestions
+            sugg_y = input_y - 16
+            self._set_pos_size("lblSuggestions", 6, sugg_y, 50, 10)
+            
+            s_x = 60
+            for i in range(3):
+                btn_name = f"btnSugg{i}"
+                ctrl = self.dialog.getControl(btn_name)
+                if ctrl:
+                    btn_width = ctrl.getModel().Width
+                    self._set_pos_size(btn_name, s_x, sugg_y - 2, btn_width, 12)
+                    s_x += btn_width + 4
+                    
+            # Insert Mode & Apply/Clear
+            tools_y = sugg_y - 20
+            self._set_pos_size("lblInsertMode", 6, tools_y, 30, 10)
+            self._set_pos_size("lstInsertMode", 36, tools_y, 62, 12)
+            self._set_pos_size("lblStatus", 104, tools_y, width - 250, 10)
+            self._set_pos_size("btnClear", width - 120, tools_y, 36, 14)
+            self._set_pos_size("btnApply", width - 60, tools_y, 54, 14)
+            
+            # 3. Middle Section (txtChat)
+            chat_y = 74
+            chat_height = tools_y - chat_y - 8
+            if chat_height < 50: 
+                chat_height = 50
+            self._set_pos_size("txtChat", 6, chat_y, width - 12, chat_height)
+            
+        except Exception:
+            pass
+
+    def _set_pos_size(self, name, x, y, w, h):
+        ctrl = self.dialog.getControl(name)
+        if ctrl:
+            m = ctrl.getModel()
+            m.PositionX = int(x)
+            m.PositionY = int(y)
+            m.Width = int(w)
+            m.Height = int(h)
 
     # ── Chat rendering ──
 
@@ -868,9 +942,15 @@ class ClearListener(unohelper.Base, XActionListener):
     def disposing(self, s):
         pass
 
-class WindowListener(unohelper.Base, __import__("com.sun.star.awt", fromlist=["XTopWindowListener"]).XTopWindowListener):
+class WindowListener(
+    unohelper.Base, 
+    __import__("com.sun.star.awt", fromlist=["XTopWindowListener"]).XTopWindowListener,
+    __import__("com.sun.star.awt", fromlist=["XWindowListener"]).XWindowListener
+):
     def __init__(self, dlg):
         self.dlg = dlg
+        
+    # XTopWindowListener
     def windowClosing(self, ev):
         self.dlg.close_dialog()
     def windowOpened(self, ev): pass
@@ -879,6 +959,18 @@ class WindowListener(unohelper.Base, __import__("com.sun.star.awt", fromlist=["X
     def windowNormalized(self, ev): pass
     def windowActivated(self, ev): pass
     def windowDeactivated(self, ev): pass
+    
+    # XWindowListener
+    def windowResized(self, ev):
+        # ev.Width and ev.Height are in Pixels! We must convert them to AppFonts
+        if hasattr(self.dlg, '_ratio_x') and hasattr(self.dlg, '_ratio_y'):
+            af_width = int(ev.Width * self.dlg._ratio_x)
+            af_height = int(ev.Height * self.dlg._ratio_y)
+            self.dlg._do_layout(af_width, af_height)
+    def windowMoved(self, ev): pass
+    def windowShown(self, ev): pass
+    def windowHidden(self, ev): pass
+    
     def disposing(self, ev): pass
 
 class InputKeyListener(unohelper.Base, XKeyListener):
