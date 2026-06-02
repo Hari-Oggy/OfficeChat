@@ -77,57 +77,52 @@ class ChatDialog:
         dm.Closeable = True
         dm.Moveable = True
         dm.Sizeable = True
+        dm.DesktopAsParent = True
 
         y = 4  # current y position tracker
 
-        # ── Row 1: Header + window control buttons ──
+        # ── Row 1: Header ──
         self._add_label(dm, "lblHeader", 6, y, 240, 10,
                         "OfficeChat  |  Select text in your document, then chat or use quick actions.")
-        self._add_button(dm, "btnMinimize", dm.Width - 76, y, 16, 12, "—")
-        self._add_button(dm, "btnMaximize", dm.Width - 56, y, 16, 12, "□")
-        self._add_button(dm, "btnClose", dm.Width - 36, y, 16, 12, "X")
         y += 16
 
-        # ── Row 2: Quick Actions bar ──
-        self._add_label(dm, "lblActions", 6, y, 50, 10, "Actions:")
+        # ── Row 2: Action Dropdown ──
+        self._add_label(dm, "lblActions", 6, y, 40, 10, "Action:")
 
-        actions = [
-            ("btnRewrite", "Rewrite", 50),
-            ("btnImprove", "Improve", 100),
-            ("btnSummarize", "Summarize", 152),
-            ("btnExpand", "Expand", 210),
-            ("btnShorten", "Shorten", 254),
-        ]
-        for name, label, x in actions:
-            self._add_button(dm, name, x, y, 44, 14, label)
+        cmb_action = dm.createInstance("com.sun.star.awt.UnoControlComboBoxModel")
+        cmb_action.Name = "cmbAction"
+        cmb_action.PositionX = 46
+        cmb_action.PositionY = y
+        cmb_action.Width = 100
+        cmb_action.Height = 12
+        cmb_action.Dropdown = True
+        
+        self.ACTION_MAPPING = {
+            "Rewrite Selection": "rewrite",
+            "Improve Writing": "improve",
+            "Summarize Selection": "summarize",
+            "Expand Content": "expand",
+            "Shorten Content": "shorten",
+            "Fix Grammar": "grammar",
+            "Make Formal": "formal",
+            "Make Casual": "casual",
+            "Convert to Bullets": "bullet_points",
+            "Convert to Table": "table",
+            "Translate": "translate",
+            "Continue Writing": "continue",
+            "Doc: Summary": "doc_summary",
+            "Doc: Action Items": "doc_action_items",
+            "Doc: Deadlines": "doc_deadlines",
+            "Doc: Gen TOC": "doc_toc",
+            "Doc: Conflicts": "doc_conflicts"
+        }
+        
+        cmb_action.StringItemList = tuple(self.ACTION_MAPPING.keys())
+        cmb_action.Text = "Rewrite Selection"
+        dm.insertByName("cmbAction", cmb_action)
 
-        y += 18
-
-        # Row 3: More actions
-        actions2 = [
-            ("btnGrammar", "Grammar", 6),
-            ("btnFormal", "Formal", 56),
-            ("btnCasual", "Casual", 106),
-            ("btnBullets", "Bullets", 156),
-            ("btnTable", "Table", 206),
-            ("btnTranslate", "Translate", 250),
-            ("btnContinue", "Continue", 306),
-        ]
-        for name, label, x in actions2:
-            self._add_button(dm, name, x, y, 46, 14, label)
-
-        y += 18
-
-        # Row 3a: Document Agent actions
-        doc_actions = [
-            ("btnDocSummary", "Doc Summary", 6, 70),
-            ("btnDocAction", "Action Items", 80, 70),
-            ("btnDocDeadlines", "Deadlines", 154, 60),
-            ("btnDocTOC", "Gen TOC", 218, 50),
-            ("btnDocConflicts", "Conflicts", 272, 60),
-        ]
-        for name, label, x, w in doc_actions:
-            self._add_button(dm, name, x, y, w, 14, label)
+        # Run Action Button
+        self._add_button(dm, "btnRunAction", 152, y, 54, 14, "Run Action")
 
         y += 18
 
@@ -179,14 +174,14 @@ class ChatDialog:
         chat_model.PositionX = 6
         chat_model.PositionY = y
         chat_model.Width = dm.Width - 12
-        chat_model.Height = 220
+        chat_model.Height = 256  # Increased height since we removed buttons
         chat_model.MultiLine = True
         chat_model.ReadOnly = True
         chat_model.VScroll = True
         chat_model.HardLineBreaks = True
         chat_model.Text = self._render_chat()
         dm.insertByName("txtChat", chat_model)
-        y += 224
+        y += 260
 
         # Input text area
         input_model = dm.createInstance("com.sun.star.awt.UnoControlEditModel")
@@ -256,9 +251,6 @@ class ChatDialog:
         self._wire(dc, "btnSend", SendListener(self))
         self._wire(dc, "btnApply", ApplyListener(self))
         self._wire(dc, "btnClear", ClearListener(self))
-        self._wire(dc, "btnClose", CloseListener(self))
-        self._wire(dc, "btnMinimize", MinimizeListener(self))
-        self._wire(dc, "btnMaximize", MaximizeListener(self))
 
         # Populate insertion mode dropdown
         try:
@@ -278,49 +270,30 @@ class ChatDialog:
         except Exception:
             pass
 
-        # Quick action listeners
-        action_map = {
-            "btnRewrite": "rewrite",
-            "btnImprove": "improve",
-            "btnSummarize": "summarize",
-            "btnExpand": "expand",
-            "btnShorten": "shorten",
-            "btnGrammar": "grammar",
-            "btnFormal": "formal",
-            "btnCasual": "casual",
-            "btnBullets": "bullet_points",
-            "btnTable": "table",
-            "btnTranslate": "translate",
-            "btnContinue": "continue",
-            "btnDocSummary": "doc_summary",
-            "btnDocAction": "doc_action_items",
-            "btnDocDeadlines": "doc_deadlines",
-            "btnDocTOC": "doc_toc",
-            "btnDocConflicts": "doc_conflicts",
-        }
-        for btn_name, action_name in action_map.items():
-            self._wire(dc, btn_name, QuickActionListener(self, action_name))
+        # ── Wire Run Action listener ──
+        self._wire(dc, "btnRunAction", RunActionListener(self))
 
         # Key listener on input
         dc.getControl("txtInput").addKeyListener(InputKeyListener(self))
 
         # ── Create peer & show ──
         toolkit = smgr.createInstanceWithContext("com.sun.star.awt.Toolkit", self.ctx)
-        parent_win = None
+        
+        # Detach from parent frame so the window can be moved independently
+        dc.createPeer(toolkit, None)
+        self.dialog = dc
+
+        # Listen for native window closing events
         try:
-            desktop = smgr.createInstanceWithContext("com.sun.star.frame.Desktop", self.ctx)
-            frame = desktop.getCurrentFrame()
-            if frame:
-                parent_win = frame.getContainerWindow()
+            from com.sun.star.awt import XTopWindowListener
+            self._window_listener = WindowListener(self)
+            dc.getPeer().addTopWindowListener(self._window_listener)
         except Exception:
             pass
 
-        dc.createPeer(toolkit, parent_win if parent_win else None)
-        self.dialog = dc
-
         dc.getControl("txtInput").setFocus()
         dc.setVisible(True)
-        dc.execute()
+        # Removed dc.execute() to allow modeless dialog that doesn't block LibreOffice
 
     # ── UI helpers ──
 
@@ -405,10 +378,7 @@ class ChatDialog:
     def _set_buttons_enabled(self, enabled):
         """Enable or disable action buttons during streaming."""
         buttons = [
-            "btnSend", "btnRewrite", "btnImprove", "btnSummarize",
-            "btnExpand", "btnShorten", "btnGrammar", "btnFormal",
-            "btnCasual", "btnBullets", "btnTable", "btnTranslate", "btnContinue",
-            "btnDocSummary", "btnDocAction", "btnDocDeadlines", "btnDocTOC", "btnDocConflicts"
+            "btnSend", "btnRunAction"
         ]
         for name in buttons:
             try:
@@ -821,7 +791,8 @@ class ChatDialog:
     def close_dialog(self):
         if self.dialog:
             self._is_streaming = False
-            self.dialog.endExecute()
+            self.dialog.dispose()
+            self.dialog = None
 
 
 # ═══════════════════════════════════════════════
@@ -851,12 +822,18 @@ class SendListener(unohelper.Base, XActionListener):
     def disposing(self, s):
         pass
 
-class QuickActionListener(unohelper.Base, XActionListener):
-    def __init__(self, dlg, action):
+class RunActionListener(unohelper.Base, XActionListener):
+    def __init__(self, dlg):
         self.dlg = dlg
-        self.action = action
     def actionPerformed(self, ev):
-        self.dlg.send_message(action=self.action)
+        try:
+            ctrl = self.dlg.dialog.getControl("cmbAction")
+            selected_text = ctrl.getText()
+            action = self.dlg.ACTION_MAPPING.get(selected_text)
+            if action:
+                self.dlg.send_message(action=action)
+        except Exception as e:
+            self.dlg._set_status(f"Error running action: {e}")
     def disposing(self, s):
         pass
 
@@ -891,29 +868,18 @@ class ClearListener(unohelper.Base, XActionListener):
     def disposing(self, s):
         pass
 
-class CloseListener(unohelper.Base, XActionListener):
+class WindowListener(unohelper.Base, __import__("com.sun.star.awt", fromlist=["XTopWindowListener"]).XTopWindowListener):
     def __init__(self, dlg):
         self.dlg = dlg
-    def actionPerformed(self, ev):
+    def windowClosing(self, ev):
         self.dlg.close_dialog()
-    def disposing(self, s):
-        pass
-
-class MinimizeListener(unohelper.Base, XActionListener):
-    def __init__(self, dlg):
-        self.dlg = dlg
-    def actionPerformed(self, ev):
-        self.dlg.toggle_minimize()
-    def disposing(self, s):
-        pass
-
-class MaximizeListener(unohelper.Base, XActionListener):
-    def __init__(self, dlg):
-        self.dlg = dlg
-    def actionPerformed(self, ev):
-        self.dlg.toggle_maximize()
-    def disposing(self, s):
-        pass
+    def windowOpened(self, ev): pass
+    def windowClosed(self, ev): pass
+    def windowMinimized(self, ev): pass
+    def windowNormalized(self, ev): pass
+    def windowActivated(self, ev): pass
+    def windowDeactivated(self, ev): pass
+    def disposing(self, ev): pass
 
 class InputKeyListener(unohelper.Base, XKeyListener):
     def __init__(self, dlg):
