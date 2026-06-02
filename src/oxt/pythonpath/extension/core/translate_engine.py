@@ -23,11 +23,8 @@ class TranslateEngine:
         
         user_prompt = f"Text to translate to {target_language}:\n\n{text}"
         
-        import asyncio
-        asyncio.create_task(
-            self.orchestrator.generate_text(
-                prompt=user_prompt,
-                output_queue=output_queue,
-                system_prompt=system_prompt
-            )
+        return self.orchestrator.generate_text(
+            prompt=user_prompt,
+            output_queue=output_queue,
+            system_prompt=system_prompt
         )

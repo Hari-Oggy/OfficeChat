@@ -558,7 +558,8 @@ class ChatDialog:
             self._is_streaming = True
             
             # Execute the DocumentAgent method (it handles its own system prompt and execution)
-            doc_agent_actions[action][0](self.engine.output_queue)
+            coro = doc_agent_actions[action][0](self.engine.output_queue)
+            self.engine.post_task(coro)
             
             self._poll_thread = threading.Thread(target=self._poll_responses, daemon=True)
             self._poll_thread.start()
@@ -587,7 +588,8 @@ class ChatDialog:
                 self._streaming_buffer = ""
                 self._is_streaming = True
                 
-                self.rewrite_engine.generate_variants(content, tone, count=3, output_queue=self.engine.output_queue)
+                coro = self.rewrite_engine.generate_variants(content, tone, count=3, output_queue=self.engine.output_queue)
+                self.engine.post_task(coro)
                 self._poll_thread = threading.Thread(target=self._poll_responses, daemon=True)
                 self._poll_thread.start()
                 return
@@ -606,7 +608,8 @@ class ChatDialog:
                 self._streaming_buffer = ""
                 self._is_streaming = True
                 
-                self.translate_engine.translate_selection(content, lang, output_queue=self.engine.output_queue)
+                coro = self.translate_engine.translate_selection(content, lang, output_queue=self.engine.output_queue)
+                self.engine.post_task(coro)
                 self._poll_thread = threading.Thread(target=self._poll_responses, daemon=True)
                 self._poll_thread.start()
                 return
@@ -624,7 +627,8 @@ class ChatDialog:
                 self._streaming_buffer = ""
                 self._is_streaming = True
                 
-                self.table_engine.text_to_table(content, output_queue=self.engine.output_queue)
+                coro = self.table_engine.text_to_table(content, output_queue=self.engine.output_queue)
+                self.engine.post_task(coro)
                 self._poll_thread = threading.Thread(target=self._poll_responses, daemon=True)
                 self._poll_thread.start()
                 return
@@ -654,7 +658,8 @@ class ChatDialog:
                 self._streaming_buffer = ""
                 self._is_streaming = True
                 
-                self.doc_agent.answer_question(user_text, self.engine.output_queue)
+                coro = self.doc_agent.answer_question(user_text, self.engine.output_queue)
+                self.engine.post_task(coro)
                 
                 self._poll_thread = threading.Thread(target=self._poll_responses, daemon=True)
                 self._poll_thread.start()

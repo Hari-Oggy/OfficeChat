@@ -21,11 +21,8 @@ class TableEngine:
         
         user_prompt = f"Convert the following information into a table:\n\n{text}"
         
-        import asyncio
-        asyncio.create_task(
-            self.orchestrator.generate_text(
-                prompt=user_prompt,
-                output_queue=output_queue,
-                system_prompt=system_prompt
-            )
+        return self.orchestrator.generate_text(
+            prompt=user_prompt,
+            output_queue=output_queue,
+            system_prompt=system_prompt
         )

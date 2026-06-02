@@ -11,3 +11,5 @@ wheels/
 graphify-out/
 agents/
 .env
+docs/calc_integration/*
+docs/*

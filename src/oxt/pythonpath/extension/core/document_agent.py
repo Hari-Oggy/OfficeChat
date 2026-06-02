@@ -24,13 +24,11 @@ class DocumentAgent:
         """Helper to execute the generation through the orchestrator."""
         # For document agent actions, we don't necessarily need chat history,
         # but we can use the base generate_text function if we want.
-        import asyncio
-        asyncio.create_task(
-            self.orchestrator.generate_text(
-                prompt=user_prompt,
-                output_queue=output_queue,
-                system_prompt=system_prompt
-            )
+        # Return the coroutine to be scheduled by the AsyncEngine
+        return self.orchestrator.generate_text(
+            prompt=user_prompt,
+            output_queue=output_queue,
+            system_prompt=system_prompt
         )
 
     def summarize_document(self, output_queue, format_type: str = 'executive'):
@@ -52,7 +50,7 @@ class DocumentAgent:
         prompt_instruction = formats.get(format_type, formats['executive'])
         user_prompt = f"{prompt_instruction}\n\nDocument Context:\n{context}"
         
-        self._execute(system_prompt, user_prompt, output_queue)
+        return self._execute(system_prompt, user_prompt, output_queue)
 
     def extract_action_items(self, output_queue):
         """Extract action items from the document."""
@@ -65,7 +63,7 @@ class DocumentAgent:
             "Extract all action items, tasks, and next steps from the following document. "
             "Format them as a checklist or bullet points.\n\nDocument Context:\n" + context
         )
-        self._execute(system_prompt, user_prompt, output_queue)
+        return self._execute(system_prompt, user_prompt, output_queue)
 
     def extract_deadlines(self, output_queue):
         """Extract deadlines and dates from the document."""
@@ -78,7 +76,7 @@ class DocumentAgent:
             "Extract all deadlines, dates, and schedule information from the following document. "
             "Format them clearly, preferably as a list or table.\n\nDocument Context:\n" + context
         )
-        self._execute(system_prompt, user_prompt, output_queue)
+        return self._execute(system_prompt, user_prompt, output_queue)
 
     def find_inconsistencies(self, output_queue):
         """Find logical inconsistencies or conflicting statements."""
@@ -91,7 +89,7 @@ class DocumentAgent:
             "Analyze the following document and identify any logical inconsistencies, "
             "conflicting statements, or contradictory facts. List them clearly.\n\nDocument Context:\n" + context
         )
-        self._execute(system_prompt, user_prompt, output_queue)
+        return self._execute(system_prompt, user_prompt, output_queue)
 
     def answer_question(self, question: str, output_queue):
         """Answer a user question based on the document."""
@@ -104,7 +102,7 @@ class DocumentAgent:
             f"Based on the following document context, answer this question: {question}\n\n"
             f"Document Context:\n{context}"
         )
-        self._execute(system_prompt, user_prompt, output_queue)
+        return self._execute(system_prompt, user_prompt, output_queue)
 
     def generate_toc(self, output_queue):
         """Generate a Table of Contents based on document headings."""
@@ -125,4 +123,4 @@ class DocumentAgent:
             "Format the following document outline into a clean, hierarchical Markdown list to serve as a Table of Contents. "
             "Make it look professional.\n\n" + outline
         )
-        self._execute(system_prompt, user_prompt, output_queue)
+        return self._execute(system_prompt, user_prompt, output_queue)

@@ -121,9 +121,6 @@ class RichTextInserter:
                 table_rows.append(current_row)
             elif token.type in ('th_open', 'td_open'):
                 current_cell = []
-                if i + 1 < n and tokens[i+1].type == 'inline':
-                    current_cell.append(tokens[i+1])
-                    i += 1
             elif token.type in ('th_close', 'td_close'):
                 current_row.append(current_cell)
             elif token.type == 'table_close':
@@ -153,6 +150,13 @@ class RichTextInserter:
                     self._insert_inline_tokens(cursor, tokens[i])
                 
             elif token.type == 'paragraph_open':
+                # If we are inside a table, we don't insert paragraphs, we collect inline tokens!
+                if table_rows is not None and len(tokens) > i+1 and tokens[i+1].type == 'inline' and current_cell is not None and (tokens[i-1].type in ('th_open', 'td_open')):
+                    # We are in a table cell!
+                    i += 1
+                    current_cell.append(tokens[i])
+                    continue
+                
                 if not first_block: self._text.insertControlCharacter(cursor, 0, False)
                 first_block = False
                 

@@ -1,4 +1,7 @@
-# -*- coding: utf-8 -*-
+import os
+
+with open('scratch/new_rich_text.py', 'w') as f:
+    f.write('''# -*- coding: utf-8 -*-
 from __future__ import annotations
 import traceback
 
@@ -121,9 +124,6 @@ class RichTextInserter:
                 table_rows.append(current_row)
             elif token.type in ('th_open', 'td_open'):
                 current_cell = []
-                if i + 1 < n and tokens[i+1].type == 'inline':
-                    current_cell.append(tokens[i+1])
-                    i += 1
             elif token.type in ('th_close', 'td_close'):
                 current_row.append(current_cell)
             elif token.type == 'table_close':
@@ -153,6 +153,13 @@ class RichTextInserter:
                     self._insert_inline_tokens(cursor, tokens[i])
                 
             elif token.type == 'paragraph_open':
+                # If we are inside a table, we don't insert paragraphs, we collect inline tokens!
+                if table_rows is not None and len(tokens) > i+1 and tokens[i+1].type == 'inline' and current_cell is not None and (tokens[i-1].type in ('th_open', 'td_open')):
+                    # We are in a table cell!
+                    i += 1
+                    current_cell.append(tokens[i])
+                    continue
+                
                 if not first_block: self._text.insertControlCharacter(cursor, 0, False)
                 first_block = False
                 
@@ -200,7 +207,7 @@ class RichTextInserter:
             cursor.setPropertyValue("CharHeight", MONOSPACE_FONT_SIZE)
         except Exception: pass
 
-        code_lines = text.split('\n')
+        code_lines = text.split(\'\\n\')
         for idx, code_line in enumerate(code_lines):
             if idx > 0:
                 self._text.insertControlCharacter(cursor, 0, False)
@@ -224,9 +231,9 @@ class RichTextInserter:
                 cursor.setPropertyValue("BottomBorder", border)
                 cursor.setPropertyValue("BottomBorderDistance", 100)
             else:
-                self._text.insertString(cursor, "─" * 40, False)
+                self._text.insertString(cursor, "\u2500" * 40, False)
         except Exception:
-            self._text.insertString(cursor, "─" * 40, False)
+            self._text.insertString(cursor, "\u2500" * 40, False)
 
     def _insert_table(self, cursor, rows) -> None:
         if not rows: return
@@ -333,10 +340,11 @@ class RichTextInserter:
         col_label = ""
         c = col
         while True:
-            col_label = chr(ord('A') + c % 26) + col_label
+            col_label = chr(ord(\'A\') + c % 26) + col_label
             c = c // 26 - 1
             if c < 0: break
         return f"{col_label}{row + 1}"
 
 def create_inserter(doc) -> RichTextInserter:
     return RichTextInserter(doc)
+''')
