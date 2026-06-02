@@ -45,15 +45,25 @@ class Dispatcher(unohelper.Base, XDispatch):
         )
         doc = desktop.getCurrentComponent()
 
-        if action == "GenerateText" or action == "ProcessData":
-            self._open_chat(doc)
+        if action in ("GenerateText", "ProcessData", "RewriteSelection", "SummarizeSelection", "AskDocument"):
+            self._open_chat(doc, action)
 
-    def _open_chat(self, doc):
-        """Open the Neuro AI Chat dialog."""
+    def _open_chat(self, doc, action):
+        """Open the Neuro AI Chat dialog and optionally trigger an action."""
         try:
             from extension.ui.chat_dialog import ChatDialog
             chat = ChatDialog(self.ctx, doc)
             chat.show()
+            
+            # Map action to UI quick action if requested
+            action_map = {
+                "RewriteSelection": "rewrite",
+                "SummarizeSelection": "summarize",
+                "AskDocument": "doc_qa"
+            }
+            if action in action_map:
+                chat.send_message(action=action_map[action])
+                
         except Exception as e:
             # Fallback: show error in a message box
             self._show_error(str(e))

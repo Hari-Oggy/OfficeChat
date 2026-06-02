@@ -6,4 +6,6 @@
                          manifest:media-type="application/vnd.sun.star.configuration-data"/>
     <manifest:file-entry manifest:full-path="ProtocolHandler.xcu"
                          manifest:media-type="application/vnd.sun.star.configuration-data"/>
+    <manifest:file-entry manifest:full-path="AcceleratorKeys.xcu"
+                         manifest:media-type="application/vnd.sun.star.configuration-data"/>
 </manifest:manifest>

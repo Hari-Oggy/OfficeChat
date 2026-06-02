@@ -43,12 +43,14 @@ class ChatDialog:
 
         # AI engine init
         from extension.utils.async_engine import AsyncEngine
+        from extension.ai.orchestrator import Orchestrator
         from extension.utils.config import ConfigManager
         from extension.core.document_context import DocumentContext
         from extension.core.document_agent import DocumentAgent
         from extension.core.rewrite_engine import RewriteEngine
         from extension.core.translate_engine import TranslateEngine
         from extension.core.table_engine import TableEngine
+        from extension.ui.prompt_suggestions import PromptSuggestionEngine
 
         self.engine = AsyncEngine()
         self.config_manager = ConfigManager()
@@ -186,20 +188,32 @@ class ChatDialog:
         dm.insertByName("txtChat", chat_model)
         y += 224
 
-        # ── User input area ──
+        # Input text area
         input_model = dm.createInstance("com.sun.star.awt.UnoControlEditModel")
         input_model.Name = "txtInput"
         input_model.PositionX = 6
-        input_model.PositionY = y
-        input_model.Width = dm.Width - 70
-        input_model.Height = 30
+        input_model.PositionY = self.NORMAL_HEIGHT - 60
+        input_model.Width = dm.Width - 62
+        input_model.Height = 36
         input_model.MultiLine = True
         input_model.VScroll = True
-        input_model.HardLineBreaks = True
         dm.insertByName("txtInput", input_model)
 
-        # Send button (tall, next to input)
-        self._add_button(dm, "btnSend", dm.Width - 60, y, 54, 14, "Send")
+        # Send button
+        self._add_button(dm, "btnSend", dm.Width - 52, self.NORMAL_HEIGHT - 60, 46, 36, "Send\n(Ctrl+Enter)")
+        
+        # ── Suggestions area (Below chat history, above input) ──
+        self._add_label(dm, "lblSuggestions", 6, self.NORMAL_HEIGHT - 72, 50, 10, "Suggestions:")
+        from extension.ui.prompt_suggestions import PromptSuggestionEngine
+        suggestions = PromptSuggestionEngine.get_suggestions(self.doc_context)
+        
+        # Create suggestion buttons
+        s_x = 60
+        for i, sugg in enumerate(suggestions[:3]):
+            btn_name = f"btnSugg{i}"
+            btn_width = len(sugg) * 4 + 10
+            self._add_button(dm, btn_name, s_x, self.NORMAL_HEIGHT - 74, btn_width, 12, sugg)
+            s_x += btn_width + 4
         # Apply button
         self._add_button(dm, "btnApply", dm.Width - 60, y + 16, 54, 14, "Apply")
 
@@ -231,7 +245,14 @@ class ChatDialog:
         dc = smgr.createInstanceWithContext("com.sun.star.awt.UnoControlDialog", self.ctx)
         dc.setModel(dm)
 
-        # ── Wire listeners ──
+        
+        # Suggestion listeners
+        for i in range(3):
+            btn_name = f"btnSugg{i}"
+            if dc.getControl(btn_name):
+                self._wire(dc, btn_name, SuggestionListener(self, btn_name))
+
+        # Add window listener for minimize/maximize
         self._wire(dc, "btnSend", SendListener(self))
         self._wire(dc, "btnApply", ApplyListener(self))
         self._wire(dc, "btnClear", ClearListener(self))
@@ -806,6 +827,21 @@ class ChatDialog:
 # ═══════════════════════════════════════════════
 # Event Listeners
 # ═══════════════════════════════════════════════
+
+class SuggestionListener(unohelper.Base, XActionListener):
+    def __init__(self, dialog, btn_name):
+        self.dialog = dialog
+        self.btn_name = btn_name
+
+    def actionPerformed(self, event):
+        try:
+            ctrl = self.dialog.dialog.getControl(self.btn_name)
+            sugg_text = ctrl.getModel().Label
+            input_ctrl = self.dialog.dialog.getControl("txtInput")
+            input_ctrl.getModel().Text = sugg_text
+            self.dialog.send_message(action=None)
+        except Exception as e:
+            print(f"Suggestion action error: {e}")
 
 class SendListener(unohelper.Base, XActionListener):
     def __init__(self, dlg):

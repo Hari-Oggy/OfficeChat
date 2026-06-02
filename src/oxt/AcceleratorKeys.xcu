@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<oor:component-data xmlns:oor="http://openoffice.org/2001/registry" 
+                    xmlns:xs="http://www.w3.org/2001/XMLSchema" 
+                    oor:name="Accelerators" 
+                    oor:package="org.openoffice.Office">
+  <node oor:name="PrimaryKeys">
+    <node oor:name="Global">
+      
+      <!-- Open AI Chat: Ctrl+Shift+A -->
+      <node oor:name="A_SHIFT_MOD1" oor:op="replace">
+        <prop oor:name="Command">
+          <value>org.neuro.ai.libreoffice.extension:GenerateText</value>
+        </prop>
+      </node>
+      
+      <!-- Rewrite Selection: Ctrl+Shift+R -->
+      <node oor:name="R_SHIFT_MOD1" oor:op="replace">
+        <prop oor:name="Command">
+          <value>org.neuro.ai.libreoffice.extension:RewriteSelection</value>
+        </prop>
+      </node>
+      
+      <!-- Summarize Selection: Ctrl+Shift+S -->
+      <node oor:name="S_SHIFT_MOD1" oor:op="replace">
+        <prop oor:name="Command">
+          <value>org.neuro.ai.libreoffice.extension:SummarizeSelection</value>
+        </prop>
+      </node>
+
+      <!-- Ask About Document: Ctrl+Shift+D -->
+      <node oor:name="D_SHIFT_MOD1" oor:op="replace">
+        <prop oor:name="Command">
+          <value>org.neuro.ai.libreoffice.extension:AskDocument</value>
+        </prop>
+      </node>
+
+    </node>
+  </node>
+</oor:component-data>
