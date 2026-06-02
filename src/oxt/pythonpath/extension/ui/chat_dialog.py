@@ -45,10 +45,12 @@ class ChatDialog:
         from extension.utils.async_engine import AsyncEngine
         from extension.ai.orchestrator import Orchestrator
         from extension.utils.config import ConfigManager
+        from extension.core.document_context import DocumentContext
 
         self.engine = AsyncEngine()
         self.config_manager = ConfigManager()
         self.orchestrator = Orchestrator(self.config_manager)
+        self.doc_context = DocumentContext(doc)
 
     def show(self):
         """Create and display the chat dialog."""
@@ -103,7 +105,12 @@ class ChatDialog:
         for name, label, x in actions2:
             self._add_button(dm, name, x, y, 46, 14, label)
 
-        y += 20
+        y += 18
+
+        # Row 3b: Document context indicator
+        self._add_label(dm, "lblContext", 6, y, 340, 10,
+                        "Context: —")
+        y += 14
 
         # ── Chat history area ──
         chat_model = dm.createInstance("com.sun.star.awt.UnoControlEditModel")
@@ -141,6 +148,9 @@ class ChatDialog:
 
         # ── Status bar ──
         self._add_label(dm, "lblStatus", 6, y, 220, 10, "Ready. Type a message or use a quick action.")
+
+        # Update context indicator with initial doc info
+        self._update_context_indicator()
 
         # ── Clear button ──
         self._add_button(dm, "btnClear", dm.Width - 80, y, 36, 12, "Clear")
@@ -294,24 +304,41 @@ class ChatDialog:
     # ── Document interaction ──
 
     def _get_selected_text(self):
+        """Get selected text via DocumentContext."""
+        return self.doc_context.get_selected_text()
+
+    def _update_context_indicator(self):
+        """Update the context label to show current document awareness state."""
+        if not self.dialog:
+            return
         try:
-            if self.doc and self.doc.supportsService("com.sun.star.text.TextDocument"):
-                controller = self.doc.getCurrentController()
-                selection = controller.getSelection()
-                if selection and selection.getCount() > 0:
-                    text = selection.getByIndex(0).getString()
-                    if text and text.strip():
-                        return text
-            elif self.doc and self.doc.supportsService("com.sun.star.sheet.SpreadsheetDocument"):
-                controller = self.doc.getCurrentController()
-                selection = controller.getSelection()
-                if selection and selection.supportsService("com.sun.star.sheet.SheetCell"):
-                    text = selection.getString()
-                    if text and text.strip():
-                        return text
+            meta = self.doc_context.get_metadata()
+            tokens = self.doc_context.estimate_token_count()
+            selected = self.doc_context.get_selected_text()
+
+            parts = []
+            if meta.get("title"):
+                parts.append(meta["title"][:30])
+            parts.append(f"{meta.get('word_count', 0)} words")
+            parts.append(f"~{tokens:,} tokens")
+            if meta.get("heading_count"):
+                parts.append(f"{meta['heading_count']} headings")
+            if meta.get("table_count"):
+                parts.append(f"{meta['table_count']} tables")
+
+            if tokens <= 30000:
+                parts.append("[Full Context]")
+            else:
+                parts.append("[Smart Truncation]")
+
+            if selected:
+                sel_words = len(selected.split())
+                parts.append(f"| Selection: {sel_words} words")
+
+            label = "Context: " + " · ".join(parts)
+            self.dialog.getControl("lblContext").getModel().Label = label
         except Exception:
             pass
-        return ""
 
     # ── Core messaging ──
 
@@ -319,6 +346,10 @@ class ChatDialog:
         """Send a message to the AI. Optionally with a quick action."""
         if self._is_streaming:
             return
+
+        # Refresh context indicator and invalidate cache for fresh state
+        self.doc_context.invalidate_cache()
+        self._update_context_indicator()
 
         txt_input = self.dialog.getControl("txtInput")
         user_text = txt_input.getModel().Text.strip()
@@ -341,7 +372,16 @@ class ChatDialog:
             display_text = user_text
             prompt = user_text
             if selected_text:
+                # Use selected text as primary context
                 prompt = f"Document context (selected text):\n\"\"\"\n{selected_text}\n\"\"\"\n\nUser instruction: {user_text}"
+            else:
+                # No selection: inject document context using B+ strategy
+                doc_ctx = self.doc_context.get_context_for_prompt(user_query=user_text)
+                if doc_ctx:
+                    prompt = (
+                        f"Document context:\n\"\"\"\n{doc_ctx}\n\"\"\"\n\n"
+                        f"User instruction: {user_text}"
+                    )
 
         self._current_action = action
 
