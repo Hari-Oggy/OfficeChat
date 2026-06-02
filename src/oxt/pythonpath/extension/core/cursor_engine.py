@@ -107,7 +107,7 @@ class CursorEngine:
         The content is inserted exactly where the user's cursor (caret)
         sits, without moving to the end of the document.
         """
-        from extension.core.rich_text import RichTextInserter, _tokenise
+        from extension.core.rich_text import RichTextInserter
 
         cursor = self._get_view_cursor_as_text_cursor()
         if cursor is None:
@@ -116,8 +116,11 @@ class CursorEngine:
             return
 
         inserter = RichTextInserter(self._doc)
-        tokens = _tokenise(markdown_text)
-        inserter._insert_tokens_at_cursor(cursor, tokens)
+        if inserter.md:
+            tokens = inserter.md.parse(markdown_text)
+            inserter._insert_tokens_at_cursor(cursor, tokens)
+        else:
+            inserter.insert_plain(markdown_text)
 
     def insert_above_cursor(self, markdown_text: str) -> None:
         """Insert content in a new paragraph ABOVE the current paragraph.
@@ -137,10 +140,13 @@ class CursorEngine:
             text_cursor.gotoPreviousParagraph(False)
 
             # Now insert the content at the new empty paragraph
-            from extension.core.rich_text import RichTextInserter, _tokenise
+            from extension.core.rich_text import RichTextInserter
             inserter = RichTextInserter(self._doc)
-            tokens = _tokenise(markdown_text)
-            inserter._insert_tokens_at_cursor(text_cursor, tokens)
+            if inserter.md:
+                tokens = inserter.md.parse(markdown_text)
+                inserter._insert_tokens_at_cursor(text_cursor, tokens)
+            else:
+                inserter.insert_plain(markdown_text)
 
         except Exception:
             # Fallback
@@ -163,10 +169,13 @@ class CursorEngine:
             self._text.insertControlCharacter(text_cursor, PARAGRAPH_BREAK, False)
 
             # Now insert the content at the new empty paragraph
-            from extension.core.rich_text import RichTextInserter, _tokenise
+            from extension.core.rich_text import RichTextInserter
             inserter = RichTextInserter(self._doc)
-            tokens = _tokenise(markdown_text)
-            inserter._insert_tokens_at_cursor(text_cursor, tokens)
+            if inserter.md:
+                tokens = inserter.md.parse(markdown_text)
+                inserter._insert_tokens_at_cursor(text_cursor, tokens)
+            else:
+                inserter.insert_plain(markdown_text)
 
         except Exception:
             # Fallback
@@ -197,28 +206,15 @@ class CursorEngine:
         Inserts a paragraph break, then a Heading 1 with the given text,
         then the markdown content below it.
         """
-        from extension.core.rich_text import (
-            RichTextInserter, _tokenise, _Token, _TokenType
-        )
-
-        # Move to end of document
-        cursor = self._text.createTextCursor()
-        cursor.gotoEnd(False)
-
-        # Add a paragraph break
-        self._text.insertControlCharacter(cursor, PARAGRAPH_BREAK, False)
-
         # Build tokens: heading + content
-        heading_token = _Token(
-            kind=_TokenType.HEADING,
-            text=heading,
-            level=1,
-        )
-        content_tokens = _tokenise(markdown_text)
-        all_tokens = [heading_token] + content_tokens
-
+        new_md = f"# {heading}\n\n{markdown_text}"
+        
         inserter = RichTextInserter(self._doc)
-        inserter._insert_tokens_at_cursor(cursor, all_tokens)
+        if inserter.md:
+            tokens = inserter.md.parse(new_md)
+            inserter._insert_tokens_at_cursor(cursor, tokens)
+        else:
+            inserter.insert_plain(new_md)
 
     def insert_new_page(self, markdown_text: str) -> None:
         """Insert a page break followed by the content.
@@ -226,25 +222,13 @@ class CursorEngine:
         Creates a new page at the end of the document, then inserts
         the rich content on that new page.
         """
-        from extension.core.rich_text import RichTextInserter, _tokenise
-
-        # Move to end of document
-        cursor = self._text.createTextCursor()
-        cursor.gotoEnd(False)
-
-        # Insert paragraph break first
-        self._text.insertControlCharacter(cursor, PARAGRAPH_BREAK, False)
-
-        # Apply page break before this new paragraph
-        try:
-            cursor.setPropertyValue("BreakType", 4)  # PAGE_BEFORE = 4
-        except Exception:
-            pass
-
         # Now insert the content
         inserter = RichTextInserter(self._doc)
-        tokens = _tokenise(markdown_text)
-        inserter._insert_tokens_at_cursor(cursor, tokens)
+        if inserter.md:
+            tokens = inserter.md.parse(markdown_text)
+            inserter._insert_tokens_at_cursor(cursor, tokens)
+        else:
+            inserter.insert_plain(markdown_text)
 
     # ------------------------------------------------------------------
     # Helpers
