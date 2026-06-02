@@ -166,6 +166,19 @@ class ChatDialog:
         cmb_lang.StringItemList = ("Spanish", "French", "German", "Chinese", "Japanese", "English")
         cmb_lang.Text = "Spanish"
         dm.insertByName("cmbLang", cmb_lang)
+        
+        self._add_label(dm, "lblProvider", 310, y, 30, 10, "Model:")
+        cmb_prov = dm.createInstance("com.sun.star.awt.UnoControlComboBoxModel")
+        cmb_prov.Name = "cmbProvider"
+        cmb_prov.PositionX = 345
+        cmb_prov.PositionY = y
+        cmb_prov.Width = 85
+        cmb_prov.Height = 12
+        cmb_prov.Dropdown = True
+        all_providers = self.config_manager.get_all_providers()
+        cmb_prov.StringItemList = tuple(all_providers)
+        cmb_prov.Text = self.config_manager.get_active_provider()
+        dm.insertByName("cmbProvider", cmb_prov)
         y += 18
 
         # ── Chat history area ──
@@ -270,6 +283,7 @@ class ChatDialog:
         # Doc context checkbox listener
         try:
             dc.getControl("chkDocContext").addItemListener(DocContextToggleListener(self))
+            dc.getControl("cmbProvider").addItemListener(ProviderListener(self))
         except Exception:
             pass
 
@@ -990,5 +1004,21 @@ class DocContextToggleListener(unohelper.Base, XItemListener):
     def itemStateChanged(self, ev):
         self.dlg._include_doc_context = (ev.Selected == 1)
         self.dlg._update_context_indicator()
+    def disposing(self, s):
+        pass
+
+class ProviderListener(unohelper.Base, XItemListener):
+    def __init__(self, dlg):
+        self.dlg = dlg
+    def itemStateChanged(self, ev):
+        try:
+            ctrl = self.dlg.dialog.getControl("cmbProvider")
+            selected = ctrl.getText()
+            self.dlg.config_manager.set_active_provider(selected)
+            self.dlg.orchestrator._provider_cache.clear()
+            self.dlg.dialog.getModel().Title = f"OfficeChat Chat [{selected}]"
+            self.dlg._set_status(f"Switched model to {selected}")
+        except Exception:
+            pass
     def disposing(self, s):
         pass

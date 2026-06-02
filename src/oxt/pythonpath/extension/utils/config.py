@@ -65,9 +65,24 @@ class ConfigManager:
         except Exception:
             return {}
 
+    def _save_config(self):
+        try:
+            with open(self.config_path, "w") as f:
+                json.dump(self.config, f, indent=4)
+        except Exception:
+            pass
+
     def get_provider_config(self, provider_name: str) -> Dict[str, str]:
         """Returns the config for a specific provider."""
         return self.config.get("providers", {}).get(provider_name, {})
 
+    def get_all_providers(self) -> list:
+        return list(self.config.get("providers", {}).keys())
+
     def get_active_provider(self) -> str:
         return self.config.get("active_provider", "openai")
+
+    def set_active_provider(self, provider_name: str):
+        if provider_name in self.get_all_providers():
+            self.config["active_provider"] = provider_name
+            self._save_config()
