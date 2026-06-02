@@ -1,12 +1,12 @@
 <div align="center">
   <img src="fig/officechat_logo.png" alt="OfficeChat Logo" width="250"/>
-  <h1>OfficeChat (Neuro AI) for LibreOffice</h1>
-  <p><strong>A production-grade AI Copilot extension integrated natively into LibreOffice Writer.</strong></p>
+  <h1>OfficeChat for LibreOffice</h1>
+  <p><strong>A production-grade AI extension integrated natively into LibreOffice Writer,Calc.</strong></p>
 </div>
 
 ---
 
-OfficeChat  brings advanced, context-aware AI capabilities directly into your LibreOffice documents. Operating flawlessly within LibreOffice's native UNO UI, it bridges powerful AI ecosystems (like OpenAI, Google Gemini, and Local Ollama) with seamless rich-text processing.
+OfficeChat brings advanced, context-aware AI capabilities directly into your LibreOffice documents. Operating flawlessly within LibreOffice's native UNO UI, it bridges powerful AI ecosystems (like OpenAI, Google Gemini, and Local Ollama) with seamless rich-text processing.
 
 ## ✨ Key Features
 
