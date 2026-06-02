@@ -1,5 +1,5 @@
 from .orchestrator import IAIProvider
-from typing import AsyncGenerator
+from typing import AsyncGenerator, List, Dict
 import json
 import urllib.request
 import asyncio
@@ -21,7 +21,8 @@ CRITICAL RULES:
    - | col1 | col2 | for tables
 3. Start directly with the content. No preamble, no sign-off.
 4. If asked to rewrite, improve, summarize, expand, shorten, change tone, fix grammar, or translate text, output ONLY the modified text — not explanations of what you changed.
-5. Match the language and tone appropriate for a professional document unless instructed otherwise."""
+5. Match the language and tone appropriate for a professional document unless instructed otherwise.
+6. When document context is provided, use it to give accurate, context-aware responses. Reference specific sections, headings, or content from the document when relevant."""
 
 
 class OpenAIProvider(IAIProvider):
@@ -31,6 +32,22 @@ class OpenAIProvider(IAIProvider):
         self.base_url = base_url or "https://api.openai.com/v1"
 
     async def generate_stream(self, prompt: str, system_prompt: str = None) -> AsyncGenerator[str, None]:
+        """Single-turn generation (backward compatible)."""
+        messages = [{"role": "user", "content": prompt}]
+        async for chunk in self.generate_stream_multi(messages, system_prompt=system_prompt):
+            yield chunk
+
+    async def generate_stream_multi(self, messages: List[Dict[str, str]],
+                                     system_prompt: str = None) -> AsyncGenerator[str, None]:
+        """Stream a response given a full multi-turn conversation history.
+
+        Parameters
+        ----------
+        messages : list of dict
+            Conversation history: [{"role": "user"|"assistant", "content": "..."}]
+        system_prompt : str, optional
+            System instruction prepended to the messages.
+        """
         url = f"{self.base_url}/chat/completions"
         headers = {
             "Content-Type": "application/json",
@@ -39,12 +56,19 @@ class OpenAIProvider(IAIProvider):
 
         sys_prompt = system_prompt or SYSTEM_PROMPT
 
+        # Build the full messages array: system + conversation history
+        api_messages = [{"role": "system", "content": sys_prompt}]
+        for msg in messages:
+            # Only include user and assistant roles
+            if msg.get("role") in ("user", "assistant"):
+                api_messages.append({
+                    "role": msg["role"],
+                    "content": msg["content"]
+                })
+
         data = {
             "model": self.model,
-            "messages": [
-                {"role": "system", "content": sys_prompt},
-                {"role": "user", "content": prompt}
-            ],
+            "messages": api_messages,
             "stream": True
         }
 

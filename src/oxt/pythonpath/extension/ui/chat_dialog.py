@@ -12,7 +12,7 @@ KEY_RETURN = 1280
 
 class ChatDialog:
     """
-    Neuro AI Chat Dialog — A Copilot-like AI assistant for LibreOffice.
+    OfficeChat Chat Dialog — A Copilot-like AI assistant for LibreOffice.
 
     Features:
     - Chat history with streaming AI responses
@@ -51,6 +51,7 @@ class ChatDialog:
         self.config_manager = ConfigManager()
         self.orchestrator = Orchestrator(self.config_manager)
         self.doc_context = DocumentContext(doc)
+        self._include_doc_context = True  # Document context toggle
 
     def show(self):
         """Create and display the chat dialog."""
@@ -60,7 +61,7 @@ class ChatDialog:
         )
 
         provider = self.config_manager.get_active_provider()
-        dm.Title = f"Neuro AI Chat  [{provider}]"
+        dm.Title = f"OfficeChat Chat  [{provider}]"
         dm.Width = self.NORMAL_WIDTH
         dm.Height = self.NORMAL_HEIGHT
         dm.Closeable = True
@@ -71,7 +72,7 @@ class ChatDialog:
 
         # ── Row 1: Header + window control buttons ──
         self._add_label(dm, "lblHeader", 6, y, 240, 10,
-                        "Neuro AI  |  Select text in your document, then chat or use quick actions.")
+                        "OfficeChat  |  Select text in your document, then chat or use quick actions.")
         self._add_button(dm, "btnMinimize", dm.Width - 76, y, 16, 12, "—")
         self._add_button(dm, "btnMaximize", dm.Width - 56, y, 16, 12, "□")
         self._add_button(dm, "btnClose", dm.Width - 36, y, 16, 12, "X")
@@ -107,9 +108,20 @@ class ChatDialog:
 
         y += 18
 
-        # Row 3b: Document context indicator
-        self._add_label(dm, "lblContext", 6, y, 340, 10,
-                        "Context: —")
+        # Row 3b: Document context indicator + checkbox
+        self._add_label(dm, "lblContext", 6, y, 280, 10,
+                        "Context: \u2014")
+
+        # "Doc Context" checkbox
+        cb_model = dm.createInstance("com.sun.star.awt.UnoControlCheckBoxModel")
+        cb_model.Name = "chkDocContext"
+        cb_model.PositionX = 290
+        cb_model.PositionY = y
+        cb_model.Width = 60
+        cb_model.Height = 10
+        cb_model.Label = "Doc Context"
+        cb_model.State = 1  # Checked by default
+        dm.insertByName("chkDocContext", cb_model)
         y += 14
 
         # ── Chat history area ──
@@ -168,6 +180,12 @@ class ChatDialog:
         self._wire(dc, "btnClose", CloseListener(self))
         self._wire(dc, "btnMinimize", MinimizeListener(self))
         self._wire(dc, "btnMaximize", MaximizeListener(self))
+
+        # Doc context checkbox listener
+        try:
+            dc.getControl("chkDocContext").addItemListener(DocContextToggleListener(self))
+        except Exception:
+            pass
 
         # Quick action listeners
         action_map = {
@@ -252,12 +270,12 @@ class ChatDialog:
                     lines.append(f"  {line}")
                 lines.append("")
             else:
-                lines.append("  Neuro AI:")
+                lines.append("  OfficeChat:")
                 for line in msg["content"].split("\n"):
                     lines.append(f"  {line}")
                 lines.append("")
         if not lines:
-            lines.append("Welcome to Neuro AI Chat!")
+            lines.append("Welcome to OfficeChat Chat!")
             lines.append("")
             lines.append("You can:")
             lines.append("  1. Type a message below and press Send")
@@ -343,13 +361,20 @@ class ChatDialog:
     # ── Core messaging ──
 
     def send_message(self, action=None):
-        """Send a message to the AI. Optionally with a quick action."""
+        """Send a message to the AI with full conversation history."""
         if self._is_streaming:
             return
 
         # Refresh context indicator and invalidate cache for fresh state
         self.doc_context.invalidate_cache()
         self._update_context_indicator()
+
+        # Read doc context toggle state
+        try:
+            cb = self.dialog.getControl("chkDocContext")
+            self._include_doc_context = (cb.getModel().State == 1)
+        except Exception:
+            pass
 
         txt_input = self.dialog.getControl("txtInput")
         user_text = txt_input.getModel().Text.strip()
@@ -374,18 +399,10 @@ class ChatDialog:
             if selected_text:
                 # Use selected text as primary context
                 prompt = f"Document context (selected text):\n\"\"\"\n{selected_text}\n\"\"\"\n\nUser instruction: {user_text}"
-            else:
-                # No selection: inject document context using B+ strategy
-                doc_ctx = self.doc_context.get_context_for_prompt(user_query=user_text)
-                if doc_ctx:
-                    prompt = (
-                        f"Document context:\n\"\"\"\n{doc_ctx}\n\"\"\"\n\n"
-                        f"User instruction: {user_text}"
-                    )
 
         self._current_action = action
 
-        # Add to history
+        # Add to chat history (display version)
         self.chat_history.append({"role": "user", "content": display_text, "action": action})
         self.chat_history.append({"role": "assistant", "content": "..."})
 
@@ -395,11 +412,24 @@ class ChatDialog:
         self._set_status(f"Generating{action_label}...")
         self._set_buttons_enabled(False)
 
+        # ── Build messages array for multi-turn ──
+        messages = self._build_messages_for_api(prompt, action)
+
+        # Get document context if enabled
+        doc_ctx = None
+        if self._include_doc_context and not action:
+            doc_ctx = self.doc_context.get_context_for_prompt(user_query=user_text)
+
         # Start async generation
         self._streaming_buffer = ""
         self._is_streaming = True
         self.engine.post_task(
-            self.orchestrator.generate_text(prompt, self.engine.output_queue, action=action)
+            self.orchestrator.generate_text_with_history(
+                messages,
+                self.engine.output_queue,
+                action=action,
+                document_context=doc_ctx,
+            )
         )
 
         self._poll_thread = threading.Thread(target=self._poll_responses, daemon=True)
@@ -435,6 +465,42 @@ class ChatDialog:
                     break
             else:
                 time.sleep(0.05)
+
+    def _build_messages_for_api(self, current_prompt: str, action: str = None):
+        """Build an OpenAI-format messages list from the chat history.
+
+        Includes previous conversation turns so the AI has memory.
+        The last user message uses the full prompt (with any context).
+        Skips the placeholder '...' assistant messages.
+
+        Returns
+        -------
+        list of dict
+            [{"role": "user"|"assistant", "content": "..."}]
+        """
+        messages = []
+
+        # Include previous turns (skip the last 2 entries which are the
+        # current user message + placeholder assistant response)
+        history_to_send = self.chat_history[:-2]
+
+        # Limit history to last 20 turns to avoid token explosion
+        max_history_turns = 20
+        if len(history_to_send) > max_history_turns:
+            history_to_send = history_to_send[-max_history_turns:]
+
+        for msg in history_to_send:
+            content = msg.get("content", "")
+            role = msg.get("role", "user")
+            # Skip empty messages, placeholders, and error messages
+            if not content or content == "..." or content.startswith("Error:"):
+                continue
+            messages.append({"role": role, "content": content})
+
+        # Add the current user message with the full prompt
+        messages.append({"role": "user", "content": current_prompt})
+
+        return messages
 
     # ── Apply to document ──
 
@@ -538,7 +604,7 @@ class ChatDialog:
         self.chat_history.clear()
         self._streaming_buffer = ""
         self._update_chat_display()
-        self._set_status("Chat cleared.")
+        self._set_status("Chat cleared. Conversation memory reset.")
 
     def close_dialog(self):
         if self.dialog:
@@ -616,5 +682,14 @@ class InputKeyListener(unohelper.Base, XKeyListener):
             self.dlg.send_message()
     def keyReleased(self, ev):
         pass
+    def disposing(self, s):
+        pass
+
+class DocContextToggleListener(unohelper.Base, XItemListener):
+    def __init__(self, dlg):
+        self.dlg = dlg
+    def itemStateChanged(self, ev):
+        self.dlg._include_doc_context = (ev.Selected == 1)
+        self.dlg._update_context_indicator()
     def disposing(self, s):
         pass

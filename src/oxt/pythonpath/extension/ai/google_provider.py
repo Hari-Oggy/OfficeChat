@@ -1,6 +1,6 @@
 from .orchestrator import IAIProvider
 from .openai_provider import SYSTEM_PROMPT
-from typing import AsyncGenerator
+from typing import AsyncGenerator, List, Dict
 import json
 import urllib.request
 import asyncio
@@ -11,18 +11,58 @@ class GoogleProvider(IAIProvider):
         self.model = model or "gemini-1.5-pro"
 
     async def generate_stream(self, prompt: str, system_prompt: str = None) -> AsyncGenerator[str, None]:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:streamGenerateContent?alt=sse&key={self.api_key}"
+        """Single-turn generation (backward compatible)."""
+        messages = [{"role": "user", "content": prompt}]
+        async for chunk in self.generate_stream_multi(messages, system_prompt=system_prompt):
+            yield chunk
+
+    async def generate_stream_multi(self, messages: List[Dict[str, str]],
+                                     system_prompt: str = None) -> AsyncGenerator[str, None]:
+        """Stream a response given a full multi-turn conversation history.
+
+        Converts OpenAI-format messages to Gemini's multi-turn format:
+        - "user" role stays as "user"
+        - "assistant" role becomes "model"
+        """
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{self.model}:streamGenerateContent?alt=sse&key={self.api_key}"
+        )
         headers = {
             "Content-Type": "application/json"
         }
 
         sys_prompt = system_prompt or SYSTEM_PROMPT
 
+        # Convert OpenAI-format messages to Gemini format
+        contents = []
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            if not content:
+                continue
+            # Gemini uses "user" and "model" roles
+            gemini_role = "model" if role == "assistant" else "user"
+            contents.append({
+                "role": gemini_role,
+                "parts": [{"text": content}]
+            })
+
+        # Ensure the conversation alternates roles (Gemini requirement).
+        # Merge consecutive same-role messages.
+        merged_contents = []
+        for entry in contents:
+            if merged_contents and merged_contents[-1]["role"] == entry["role"]:
+                # Merge into previous
+                merged_contents[-1]["parts"][0]["text"] += "\n\n" + entry["parts"][0]["text"]
+            else:
+                merged_contents.append(entry)
+
         data = {
             "systemInstruction": {
                 "parts": [{"text": sys_prompt}]
             },
-            "contents": [{"parts": [{"text": prompt}]}]
+            "contents": merged_contents if merged_contents else [{"parts": [{"text": "Hello"}]}]
         }
 
         req = urllib.request.Request(url, data=json.dumps(data).encode("utf-8"), headers=headers)

@@ -1,9 +1,32 @@
-from typing import AsyncGenerator
+from typing import AsyncGenerator, List, Dict
 import asyncio
 
 class IAIProvider:
     async def generate_stream(self, prompt: str, system_prompt: str = None) -> AsyncGenerator[str, None]:
         raise NotImplementedError
+
+    async def generate_stream_multi(self, messages: List[Dict[str, str]],
+                                     system_prompt: str = None) -> AsyncGenerator[str, None]:
+        """Stream a response given a full multi-turn conversation.
+
+        Parameters
+        ----------
+        messages : list of dict
+            OpenAI-format messages: [{"role": "user"|"assistant", "content": "..."}]
+        system_prompt : str, optional
+            System instruction to prepend.
+
+        Default implementation falls back to single-turn using the last
+        user message.
+        """
+        # Fallback: extract last user message and use single-turn
+        last_user = ""
+        for msg in reversed(messages):
+            if msg["role"] == "user":
+                last_user = msg["content"]
+                break
+        async for chunk in self.generate_stream(last_user, system_prompt=system_prompt):
+            yield chunk
 
 
 # Pre-defined action prompts for Copilot-like editing features
@@ -63,7 +86,7 @@ class Orchestrator:
         return provider
 
     async def generate_text(self, prompt: str, output_queue, action: str = None, system_prompt: str = None) -> None:
-        """Generate text with optional action prefix and custom system prompt."""
+        """Generate text with optional action prefix and custom system prompt (single-turn)."""
         try:
             provider = self._get_provider()
 
@@ -73,6 +96,68 @@ class Orchestrator:
                 final_prompt = ACTION_PROMPTS[action] + prompt
 
             async for chunk in provider.generate_stream(final_prompt, system_prompt=system_prompt):
+                if chunk:
+                    output_queue.put({"type": "chunk", "text": chunk})
+            output_queue.put({"type": "done"})
+        except Exception as e:
+            output_queue.put({"type": "error", "message": str(e)})
+
+    async def generate_text_with_history(
+        self,
+        messages: List[Dict[str, str]],
+        output_queue,
+        action: str = None,
+        system_prompt: str = None,
+        document_context: str = None,
+    ) -> None:
+        """Generate text using full conversation history (multi-turn).
+
+        Parameters
+        ----------
+        messages : list of dict
+            Conversation history in OpenAI format:
+            [{"role": "user"|"assistant", "content": "..."}]
+        output_queue : queue.Queue
+            Thread-safe queue for streaming chunks back to the UI.
+        action : str, optional
+            Quick action name (rewrite, summarize, etc.).
+        system_prompt : str, optional
+            Custom system prompt override.
+        document_context : str, optional
+            Document context string to inject into the system prompt.
+        """
+        try:
+            provider = self._get_provider()
+
+            # Build the system prompt with optional document context
+            from .openai_provider import SYSTEM_PROMPT
+            base_sys = system_prompt or SYSTEM_PROMPT
+
+            if document_context:
+                full_sys = (
+                    f"{base_sys}\n\n"
+                    f"=== DOCUMENT CONTEXT ===\n"
+                    f"{document_context}\n"
+                    f"=== END DOCUMENT CONTEXT ==="
+                )
+            else:
+                full_sys = base_sys
+
+            # Build final messages list — apply action prefix to last user msg
+            final_messages = []
+            for i, msg in enumerate(messages):
+                if msg["role"] == "user" and i == len(messages) - 1 and action and action in ACTION_PROMPTS:
+                    # Prepend action instruction to the last user message
+                    final_messages.append({
+                        "role": "user",
+                        "content": ACTION_PROMPTS[action] + msg["content"]
+                    })
+                else:
+                    final_messages.append(msg)
+
+            async for chunk in provider.generate_stream_multi(
+                final_messages, system_prompt=full_sys
+            ):
                 if chunk:
                     output_queue.put({"type": "chunk", "text": chunk})
             output_queue.put({"type": "done"})
